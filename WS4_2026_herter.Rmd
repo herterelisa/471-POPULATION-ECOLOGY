@@ -1,0 +1,1384 @@
+---
+title: "WS4: Structured Population Models"
+output:
+  html_document:
+    theme: "flatly"
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(6)
+library(tidyverse)
+library(patchwork)
+```
+
+<font color="#E0AC00">__Vocabulary terms__</font> appear in bold yellow. <font color="#8B16B6">__Graded exercises__</font> appear in purple boxes. <font color="#5DBA49">__Clarifications about learning objectives__</font> appear in bold green.
+
+This worksheet uses the `patchwork` package to combine plots. Install it with `install.packages("patchwork")` if needed.
+
+# Introduction
+
+In previous weeks, we employed population models (exponential, logistic, generalized Lotka-Volterra) that assume all individuals within a population are functionally equivalent. This assumption works well for some species, but many organisms show important individual variation that affects population dynamics.
+
+A common example is ontogenetic or developmental variation in age- or size-structured populations. When generations overlap, adults may be *demographically distinct* from juveniles. A population with an adult:juvenile ratio of 3:7 will behave quite differently than one with a ratio of 7:3. Today, we work with <font color="#E0AC00">__matrix population models (MPMs)__</font> to account for such structure.
+
+**Goals:**
+
+- Review basic matrix operations
+- Translate between lifecycle diagrams and MPMs
+- Project MPMs through time
+- Expand our stochastic simulation toolkit (building on WS3)
+- Use Monte Carlo methods to characterize stochastic outcomes
+- Use eigenanalysis to characterize population dynamics
+- Introduce sensitivity analysis
+
+**New Models:** Matrix population models (MPMs)
+
+**New Tools:** MPM projections; Monte Carlo methods; eigenanalysis; sensitivity analysis
+
+# A Refresher on Matrix Math
+
+Population ecologists use matrices to describe structured population growth. Before diving in, let's review matrix multiplication—the operation we'll use most.
+
+## Understanding Matrix Indices
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Matrix Indexing Convention:**
+
+When we reference matrix elements, we use subscripts $a_{ij}$ where:
+
+- **$i$ = row number** (which horizontal line)
+- **$j$ = column number** (which vertical line)
+
+Think: "**i** comes before **j** alphabetically, **r**ow comes before **c**olumn alphabetically"
+
+```
+         Column (j)
+           1   2   3
+         +---+---+---+
+Row (i) 1| a₁₁ a₁₂ a₁₃ |
+        2| a₂₁ a₂₂ a₂₃ |
+         +---+---+---+
+```
+
+So $a_{23}$ means "row 2, column 3" (bottom-right in this 2×3 matrix).
+
+</div>
+<br>
+
+Matrix multiplication is only defined when the number of columns in the first matrix equals the number of rows in the second. Given matrix $\mathbf{A}$ with dimensions $m \times n$, the product $\mathbf{AB}$ is only defined if $\mathbf{B}$ has $n$ rows. The result has $m$ rows and the same number of columns as $\mathbf{B}$.
+
+For $\mathbf{C} = \mathbf{AB}$, each element $c_{ij}$ is calculated as:
+
+$$
+c_{ij} = \sum_{k=1}^{n} a_{ik} b_{kj}
+$$
+
+In words: to get the element in row $i$, column $j$ of $\mathbf{C}$, multiply corresponding elements of row $i$ of $\mathbf{A}$ and column $j$ of $\mathbf{B}$, then sum.
+
+## Manual Matrix Multiplication Example
+
+Let's work through an example. Consider these two matrices:
+
+```{r}
+A <- matrix(c(2, 1, 
+              3, 4), nrow = 2, byrow = TRUE)
+B <- matrix(c(5, 6, 
+              7, 8), nrow = 2, byrow = TRUE)
+A
+B
+```
+
+To find $\mathbf{C} = \mathbf{AB}$ manually, we calculate each element:
+
+- $c_{11}$ (row 1, col 1): $a_{11} \times b_{11} + a_{12} \times b_{21} = 2 \times 5 + 1 \times 7 = 17$
+- $c_{12}$ (row 1, col 2): $a_{11} \times b_{12} + a_{12} \times b_{22} = 2 \times 6 + 1 \times 8 = 20$
+- $c_{21}$ (row 2, col 1): $a_{21} \times b_{11} + a_{22} \times b_{21} = 3 \times 5 + 4 \times 7 = 43$
+- $c_{22}$ (row 2, col 2): $a_{21} \times b_{12} + a_{22} \times b_{22} = 3 \times 6 + 4 \times 8 = 50$
+
+We can verify with R's `%*%` operator:
+
+```{r}
+A %*% B
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 1</font>
+
+__Calculate the product of the matrices below without using `%*%`, then verify your answer using `%*%`.__
+
+$$
+\mathbf{A} = \begin{bmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \end{bmatrix}, \quad
+\mathbf{B} = \begin{bmatrix} 7 & 8 \\ 9 & 10 \\ 11 & 12 \end{bmatrix}
+$$
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+A <- matrix(c(1, 2, 3, 
+              4, 5, 6), nrow = 2, byrow = TRUE)
+B <- matrix(c(7, 8, 
+              9, 10, 
+              11, 12), nrow = 3, byrow = TRUE)
+C <- A %*% B
+C
+
+```
+
+</div>
+<br>
+
+# Introduction to Matrix Population Models
+
+Matrix Population Models (MPMs) describe growth of structured populations, typically structured by age or discrete life stages. The key idea is that distinct <font color="#E0AC00">__vital rates__</font> govern transitions between stages. For example, survival probability from age 2 to 3 may differ from survival from age 3 to 4. We collapse these vital rates into <font color="#E0AC00">__transition rates__</font>.
+
+MPMs are an extension of geometric growth. If all stages are demographically identical, or if there's only one stage, the MPM reduces to simple geometric growth. Simple MPMs eventually behave like geometric growth models once they reach stable stage distribution.
+
+## The Projection Matrix
+
+Given a population with $n$ stages, we define an $n \times n$ <font color="#E0AC00">__projection matrix__</font> containing all transition rates.
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Projection Matrix Structure:**
+
+| Element | Name | Description |
+|---------|------|-------------|
+| $a_{ij}$ | Transition rate | Contribution of stage $j$ (column) to stage $i$ (row) in the next time step |
+| $a_{ii}$ | Stasis probability | Probability of surviving and remaining in the same stage |
+| $a_{i,i-1}$ | Growth probability | Probability of surviving and advancing to the next stage |
+| $a_{1j}$ | Fecundity | Number of new stage-1 individuals produced per stage-$j$ individual |
+
+**Visual representation of a 3×3 projection matrix:**
+
+```
+                    FROM stage (column j)
+                    Stage 1  Stage 2  Stage 3
+                   +--------+--------+--------+
+TO stage  Stage 1  |  0     |  0     |  F₃    |  ← Fecundity (top row)
+(row i)   Stage 2  |  G₁    |  S₂    |  0     |  ← Growth & Stasis
+          Stage 3  |  0     |  G₂    |  S₃    |  ← Growth & Stasis
+                   +--------+--------+--------+
+```
+
+**Key constraints:**
+
+- Column sums of survival/growth elements should be ≤ 1 (can't have >100% survival)
+- Fecundity values (top row) can be any non-negative number
+- Mortality = 1 - (sum of survival transitions from that stage)
+
+</div>
+<br>
+
+### Translating Lifecycle Diagrams to Matrices
+
+Here's how to translate a lifecycle diagram into a projection matrix. Consider a simple two-stage lifecycle:
+
+```{r echo = FALSE, fig.width=6, fig.height=2}
+# Simple visualization of a 2-stage lifecycle
+ggplot() + 
+  annotate("text", x = 1, y = 0, label = "Juvenile", size = 6) +
+  annotate("text", x = 3, y = 0, label = "Adult", size = 6) +
+  
+  # Growth arrow: Juvenile to Adult
+  annotate("segment", x = 1.5, xend = 2.5, y = 0, yend = 0, 
+           arrow = arrow(length = unit(0.3, "cm"))) +
+  annotate("text", x = 2, y = 0.15, label = "G = 0.3", size = 4) +
+  
+  # Fecundity arrow: Adult to Juvenile (curved, going back)
+  annotate("curve", x = 2.8, xend = 1.2, y = 0.2, yend = 0.2, 
+           curvature = 0.5, arrow = arrow(length = unit(0.3, "cm"))) +
+  annotate("text", x = 2, y = 0.8, label = "F = 2.5", size = 4) +
+  
+  # Stasis arrow: Adult staying Adult (loop below)
+  annotate("curve", x = 3.1, xend = 2.9, y = -0.1, yend = -0.1, 
+           curvature = -1.5, arrow = arrow(length = unit(0.3, "cm"))) +
+  annotate("text", x = 3, y = -0.35, label = "S = 0.8", size = 4) +
+  
+  xlim(0, 4.5) + ylim(-0.6, 1) +
+  theme_void()
+```
+
+The arrows indicate:
+
+- **G = 0.3**: Probability of juvenile growing to adult
+- **S = 0.8**: Probability of adult surviving and staying adult
+- **F = 2.5**: Fecundity (offspring per adult)
+
+The projection matrix is:
+
+$$
+\mathbf{A} = \begin{bmatrix} 0 & F \\ G & S \end{bmatrix} = \begin{bmatrix} 0 & 2.5 \\ 0.3 & 0.8 \end{bmatrix}
+$$
+
+**Reading the matrix:** Column $j$ shows what happens to individuals currently in stage $j$. Row $i$ shows contributions to stage $i$. So $a_{ij}$ means "contribution of stage $j$ to stage $i$."
+
+```{r}
+simple_pmat <- matrix(c(0, 2.5,
+                        0.3, 0.8), nrow = 2, byrow = TRUE)
+simple_pmat
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 2</font>
+
+__Below is a lifecycle diagram for Organism X. Construct its projection matrix.__
+
+```{r echo = FALSE, fig.width=8, fig.height=3.5}
+# Organism X lifecycle diagram (4 stages)
+# New parameterization with higher fecundity
+
+ggplot() +
+  # Stage circles
+  annotate("point", x = c(1, 3, 5, 7), y = c(0, 0, 0, 0), size = 18, shape = 21, 
+           fill = "lightblue", color = "black", stroke = 1.5) +
+  annotate("text", x = c(1, 3, 5, 7), y = c(0, 0, 0, 0), 
+           label = c("1", "2", "3", "4"), size = 5, fontface = "bold") +
+  
+  # Growth arrows
+  annotate("segment", x = 1.35, xend = 2.65, y = 0, yend = 0,
+           arrow = arrow(length = unit(0.3, "cm")), linewidth = 1) +
+  annotate("text", x = 2, y = 0.22, label = "0.15", size = 3.5) +
+  
+  annotate("segment", x = 3.35, xend = 4.65, y = 0, yend = 0,
+           arrow = arrow(length = unit(0.3, "cm")), linewidth = 1) +
+  annotate("text", x = 4, y = 0.22, label = "0.25", size = 3.5) +
+  
+  annotate("segment", x = 5.35, xend = 6.65, y = 0, yend = 0,
+           arrow = arrow(length = unit(0.3, "cm")), linewidth = 1) +
+  annotate("text", x = 6, y = 0.22, label = "0.2", size = 3.5) +
+  
+  # Stasis loops
+  annotate("curve", x = 5.12, xend = 4.88, y = -0.28, yend = -0.28,
+           curvature = -1.8, arrow = arrow(length = unit(0.2, "cm")), linewidth = 0.8) +
+  annotate("text", x = 5, y = -0.52, label = "0.35", size = 3.5) +
+  
+  annotate("curve", x = 7.12, xend = 6.88, y = -0.28, yend = -0.28,
+           curvature = -1.8, arrow = arrow(length = unit(0.2, "cm")), linewidth = 0.8) +
+  annotate("text", x = 7, y = -0.52, label = "0.5", size = 3.5) +
+  
+  # Fecundity arrows
+  annotate("curve", x = 4.75, xend = 1.25, y = 0.32, yend = 0.32,
+           curvature = 0.45, arrow = arrow(length = unit(0.3, "cm")), 
+           linewidth = 1, color = "darkred") +
+  annotate("text", x = 3, y = 0.7, label = "F = 15", size = 4, color = "darkred") +
+  
+  annotate("curve", x = 6.8, xend = 1.2, y = 0.42, yend = 0.42,
+           curvature = 0.35, arrow = arrow(length = unit(0.3, "cm")), 
+           linewidth = 1, color = "darkred") +
+  annotate("text", x = 4, y = 1.35, label = "F = 20", size = 4, color = "darkred") +
+  
+  xlim(0, 8) + ylim(-0.7, 1.6) +
+  theme_void() +
+  labs(title = "Organism X Lifecycle",
+       subtitle = "Values show transition probabilities (black) and fecundities (red)")
+```
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+# Construct the Organism X projection matrix here
+# Remember: rows = "to" stage, columns = "from" stage
+# Replace the NA values with the correct transition rates from the lifecycle diagram
+
+# Construct the Organism X projection matrix
+# Rows = "to" stage, columns = "from" stage
+
+orgX_pmat <- matrix(c(
+  0,    0,   15,  20,    # Row 1 (Stage 1) - fecundity contributions from stages 3 and 4
+  0.15, 0,    0,   0,    # Row 2 (Stage 2) - growth from stage 1
+  0,   0.25, 0.35, 0,    # Row 3 (Stage 3) - growth from stage 2 and stasis in stage 3
+  0,    0,   0.20, 0.50  # Row 4 (Stage 4) - growth from stage 3 and stasis in stage 4
+), nrow = 4, byrow = TRUE)
+
+orgX_pmat
+```
+
+</div>
+<br>
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 3</font>
+
+__Using the Organism X lifecycle diagram, identify:__
+
+- __The probability of growth from Stage 2 to 3__
+- __The probability of surviving and remaining in Stage 3__
+- __The fecundity of Stage 3__
+- __The probability of mortality in Stage 3__
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+- **Probability of growth from Stage 2 to 3:** 
+* 0.25
+
+- **Probability of surviving and remaining in Stage 3:** 
+*0.35
+
+- **Fecundity of Stage 3:** 
+*15
+
+- **Probability of mortality in Stage 3:** 
+* 1 - (0.25 + 0.35) = 1 - 0.60 = 0.40
+
+</div>
+<br>
+
+## Simulating from the Projection Matrix
+
+To simulate MPM dynamics, we multiply the projection matrix $\mathbf{A}$ by the stage distribution vector $\mathbf{N}_t$ to get $\mathbf{N}_{t+1}$:
+
+$$
+n_{j(t+1)} = \sum_{k=1}^{K} a_{jk} n_{k(t)}
+$$
+
+Here, $n_{j(t+1)}$ is the count of stage $j$ individuals at time $t+1$. We sum contributions from all $K$ stages.
+
+Here's a three-stage projection matrix:
+
+```{r}
+ex_pmat <- matrix(c(0, 0, 3,
+                    0.45, 0.05, 0,
+                    0, 0.55, 0.6), nrow = 3, byrow = TRUE)
+ex_pmat
+```
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Interpreting this matrix:**
+
+- Stage 1 (row 1): Only receives offspring from Stage 3 (fecundity = 3)
+- Stage 2 (row 2): Receives 45% of Stage 1 (growth) and 5% of Stage 2 (stasis)
+- Stage 3 (row 3): Receives 55% of Stage 2 (growth) and 60% of Stage 3 (stasis)
+- Stage 1 mortality: 1 - 0.45 = 55%
+- Stage 2 mortality: 1 - (0.05 + 0.55) = 40%
+- Stage 3 mortality: 1 - 0.60 = 40%
+
+</div>
+<br>
+
+Project one time step:
+
+```{r}
+N0 <- c(20, 14, 6)
+ex_pmat %*% N0
+```
+
+Project across multiple years using a loop:
+
+```{r}
+iter <- 5  # Number of time steps to simulate
+
+# Create an empty matrix to store results
+# Rows = time points (iter + 1 to include initial condition)
+# Columns = stages (3 stages in this example)
+# We fill it with NA as a placeholder
+N_mat <- matrix(NA, nrow = iter + 1, ncol = 3)
+
+# Store initial population in the first row
+N_mat[1,] <- N0
+
+# Loop through each time step
+# i is our loop counter, going from 1 to iter
+for(i in 1:iter){
+  # N_mat[i,] gets row i (current population)
+  # N_mat[i+1,] stores result in the next row
+  N_mat[i+1,] <- ex_pmat %*% N_mat[i,]
+}
+
+N_mat
+```
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Understanding the storage matrix:**
+
+```
+N_mat structure:
+             Stage 1  Stage 2  Stage 3
+            (col 1)  (col 2)  (col 3)
+           +--------+--------+--------+
+Year 0     |   20   |   14   |   6    |  ← N_mat[1,] = initial
+Year 1     |   18   |  9.7   |  11.3  |  ← N_mat[2,] = after 1 step
+Year 2     |  33.9  |  8.6   |  12.1  |  ← N_mat[3,] = after 2 steps
+...        |  ...   |  ...   |  ...   |
+```
+
+- `N_mat[i,]` = all columns of row i (population at time i-1)
+- `N_mat[,j]` = all rows of column j (time series for stage j)
+- `N_mat[i,j]` = single value (stage j at time i-1)
+
+</div>
+<br>
+
+Visualize the time series:
+
+```{r}
+# Wrangle matrix for plotting
+# Convert matrix to data frame, add time column, reshape to long format
+new_df <- N_mat %>%
+  as.data.frame() %>%
+  mutate(t = 0:(nrow(.)-1)) %>%  # Add time column (0 to iter)
+  pivot_longer(cols = 1:3, names_to = "stage", values_to = "size") %>%
+  mutate(stage = case_when(
+    stage == "V1" ~ "Stage 1",
+    stage == "V2" ~ "Stage 2",
+    stage == "V3" ~ "Stage 3"
+  ))
+
+p1 <- new_df %>%
+  ggplot(aes(x = t, y = size, color = stage)) +
+  geom_point() + geom_line(linetype = "dashed") +
+  theme_classic(base_size = 15) +
+  xlab("Time (years)") + ylab("Number of Individuals")
+
+p2 <- new_df %>%
+  group_by(t) %>%
+  summarize(n = sum(size)) %>%
+  ggplot(aes(x = t, y = n)) +
+  geom_point() + geom_line(linetype = "dashed") +
+  theme_classic(base_size = 15) +
+  xlab("Time (years)") + ylab("Total Population Size")
+
+p1 / p2
+```
+
+Notice the population decreases in year 2—the time series isn't <font color="#E0AC00">__monotonic__</font>. Simple MPMs eventually behave like geometric growth, but only after reaching the <font color="#E0AC00">__stable stage distribution__</font>. We started away from this equilibrium distribution; five years wasn't enough to reach it.
+
+### Checking for Stable Stage Distribution
+
+To determine if a population has reached stable stage distribution, we can examine whether the *proportions* of individuals in each stage have stabilized. Here's how to calculate stage proportions:
+
+```{r}
+# Calculate the proportion in each stage at each time point
+# apply() applies a function across rows (MARGIN=1) or columns (MARGIN=2)
+# Here we use MARGIN=1 to apply to each row independently
+stage_props <- t(apply(N_mat, 1, function(x) x/sum(x)))
+# For each row: sum the values, then divide each element by that sum
+# t() transposes because apply() returns results as columns
+
+stage_props_df <- as.data.frame(stage_props)
+colnames(stage_props_df) <- c("Stage 1", "Stage 2", "Stage 3")
+stage_props_df$Year <- 0:iter
+
+stage_props_df
+```
+
+Looking at the proportions, we can see they're still changing over the 5-year period. For example, Stage 1 goes from `r round(stage_props_df[1,1], 3)` initially to `r round(stage_props_df[6,1], 3)` by year 5. When the population reaches stable stage distribution, these proportions will remain constant even as total population size continues to change.
+
+
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 4</font>
+
+__Repeat the simulation above for 50 years instead of 5. Do you think 50 years was long enough to reach the stable stage distribution? Why or why not?__
+
+*Hint: Modify the `iter` variable and re-run the loop. Check whether the stage proportions stabilize in the final years.*
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+# Given projection matrix ex_pmat and initial population N0
+iter <- 50  # Increase to 50 years
+
+# Initialize matrix to store population size per stage over time
+N_mat <- matrix(NA, nrow = iter + 1, ncol = 3)
+N_mat[1,] <- N0
+
+# Run simulation for 50 time steps
+for(i in 1:iter){
+  N_mat[i+1,] <- ex_pmat %*% N_mat[i,]
+}
+
+# Calculate proportional stage distribution at each time step
+stage_props <- t(apply(N_mat, 1, function(x) x/sum(x)))
+colnames(stage_props) <- c("Stage 1", "Stage 2", "Stage 3")
+stage_props_df <- as.data.frame(stage_props)
+stage_props_df$Year <- 0:iter
+
+# View final years' proportions for stability check
+tail(stage_props_df, 10)
+
+
+```
+
+**Assessment: Yes, 50 years is generally enough for the population to approach its stable stage distribution.
+During the last several years in the simulation, the proportions of individuals in each stage become nearly constant, which showed minimal change from year to year, indicatinng stabilization.** 
+
+</div>
+<br>
+
+## Working with a 4-Stage Model
+
+For the remaining exercises, we'll use a provided 4-stage projection matrix for "Species A"—a perennial plant with seedling, juvenile, small adult, and large adult stages:
+
+```{r}
+# Species A: 4-stage perennial plant
+# Stage 1: Seedlings, Stage 2: Juveniles, Stage 3: Small adults, Stage 4: Large adults
+speciesA_pmat <- matrix(c(
+  0,     0,     12,    25,    # Fecundity from stages 3 and 4
+  0.15,  0,     0,     0,     # Seedling to juvenile
+  0,     0.30,  0.40,  0,     # Juvenile to small adult, small adult stasis
+  0,     0,     0.25,  0.55   # Small to large adult, large adult stasis
+), nrow = 4, byrow = TRUE)
+
+speciesA_pmat
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 5</font>
+
+__Using the Species A projection matrix above, simulate population growth for 15 years starting from $\mathbf{N}_0 = [10, 10, 10, 10]$. Plot the stage distribution time series.__
+
+*Hint: This follows the same pattern as the 3-stage example, but with 4 stages. You'll need to adjust the storage matrix dimensions and plotting code accordingly.*
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+
+library(tidyverse)
+
+# Given projection matrix for Species A
+speciesA_pmat <- matrix(c(
+  0,     0,     12,    25,    
+  0.15,  0,     0,     0,     
+  0,     0.30,  0.40,  0,     
+  0,     0,     0.25,  0.55   
+), nrow = 4, byrow = TRUE)
+
+# Initial population across 4 stages
+N0 <- c(10, 10, 10, 10)
+
+# Number of years to simulate
+iter <- 15
+
+# Initialize matrix to store population counts for each year
+N_mat <- matrix(NA, nrow = iter + 1, ncol = 4)
+N_mat[1, ] <- N0
+
+# Run population projection loop
+for (i in 1:iter) {
+  N_mat[i + 1, ] <- speciesA_pmat %*% N_mat[i, ]
+}
+
+# Convert matrix to data frame 
+N_df <- as.data.frame(N_mat) %>%
+  mutate(Year = 0:iter) %>%
+  pivot_longer(cols = 1:4, names_to = "Stage", values_to = "Count") %>%
+  mutate(Stage = factor(Stage, 
+                        levels = paste0("V", 1:4),
+                        labels = c("Seedlings", "Juveniles", "Small Adults", "Large Adults")))
+
+# Plot population 
+ggplot(N_df, aes(x = Year, y = Count, color = Stage)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  theme_minimal(base_size = 14) +
+  labs(title = "Species A Population Growth Over 15 Years",
+       x = "Year",
+       y = "Number of Individuals",
+       color = "Stage") +
+  scale_color_brewer(palette = "Set1")
+
+```
+
+</div>
+<br>
+
+# Expanding Our Stochastic Simulation Toolkit
+
+In WS3, we introduced <font color="#E0AC00">__stochastic__</font> (random) simulations using the <font color="#E0AC00">__normal distribution__</font>. We learned that stochastic processes cannot be perfectly predicted even with complete knowledge of the model structure, parameters, and initial conditions. We also used `rnorm()` to generate random values from the normal distribution.
+
+Today we expand our toolkit with two additional probability distributions that are especially useful for ecological modeling: the **binomial** and **Poisson** distributions. We'll then apply these to create stochastic versions of our matrix population models.
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #FFE285; border-radius: 5px;">
+**Recap from WS3:** In R, probability distributions come with four functions:
+
+| Prefix | Function | Example |
+|--------|----------|---------|
+| `d` | Density/probability at a value | `dnorm(0, mean=0, sd=1)` |
+| `p` | Cumulative probability | `pnorm(0, mean=0, sd=1)` |
+| `q` | Quantile (inverse of p) | `qnorm(0.5, mean=0, sd=1)` |
+| `r` | Random draws | `rnorm(10, mean=0, sd=1)` |
+
+The same prefixes work for `binom` and `pois`!
+
+</div>
+<br>
+
+## The Binomial Distribution
+
+The <font color="#E0AC00">__binomial distribution__</font> describes the number of "successes" in a fixed number of independent trials with constant success probability. This is perfect for ecological counts where each individual has some probability of an outcome, such as: number of plants flowering out of $n$ surveyed, number of eggs hatching, number of deer surviving.
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Binomial Distribution Parameters:**
+
+| Parameter | Symbol | Description |
+|-----------|--------|-------------|
+| Number of trials | $n$ or `size` | Total number of independent attempts |
+| Success probability | $p$ or `prob` | Probability of success on each trial |
+| Random variable | $X$ | Count of successes (0 to $n$) |
+
+**Key property:** Mean = $np$; Variance = $np(1-p)$
+
+**Notation:** If random variable $X$ follows a binomial distribution with $n$ trials and success probability $p$, we write:
+
+$$X \sim \text{Binomial}(n, p)$$
+
+For example, if we have 20 individuals and each has a 0.45 probability of surviving to the next stage:
+
+$$X \sim \text{Binomial}(20, 0.45)$$
+
+where $X$ is the number that survive (could be 0, 1, 2, ... up to 20).
+
+</div>
+<br>
+
+Calculate probability of exactly 8 heads in 10 fair coin flips:
+
+```{r}
+# dbinom() gives the probability mass at a specific value
+# x = number of successes we're asking about
+# size = total number of trials
+# prob = probability of success on each trial
+dbinom(x = 8, size = 10, prob = 0.5)
+```
+
+Plot the probability mass function:
+
+```{r}
+data.frame(x = 0:10,
+           prob = dbinom(0:10, size = 10, prob = 0.5)) %>%
+  ggplot(aes(x = x, y = prob)) +
+  geom_bar(stat = "identity") +
+  theme_classic(base_size = 15) +
+  xlab("Count") + ylab("Probability Mass")
+```
+
+Simulate 10,000 random draws:
+
+```{r}
+# rbinom() generates random values from a binomial distribution
+# n = how many random values to generate
+# size = number of trials per value
+# prob = success probability
+data.frame(x = rbinom(n = 10000, size = 10, prob = 0.5)) %>%
+  ggplot(aes(x = x)) +
+  geom_bar() +
+  theme_classic(base_size = 15) +
+  xlab("Count") + ylab("Frequency")
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 6</font>
+
+__Recreate the probability mass plot above but with success probability = 0.25 instead of 0.5.__
+
+*Hint: The only change needed is the `prob` argument in `dbinom()`.*
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+
+data.frame(x = rbinom(n = 10000, size = 10, prob = 0.25)) %>%
+  ggplot(aes(x = x)) +
+  geom_bar(fill = "blue") +
+  theme_classic(base_size = 15) +
+  xlab("Count") + ylab("Frequency") +
+  ggtitle("Binomial Distribution Simulation: n = 10, p = 0.25")
+
+
+```
+
+</div>
+<br>
+
+## The Poisson Distribution
+
+The <font color="#E0AC00">__Poisson distribution__</font> describes counts of events occurring at a constant rate across continuous time or space (named after Siméon Poisson, not fish). It's useful when there's no fixed upper bound on the count.
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Poisson Distribution Parameters:**
+
+| Parameter | Symbol | Description |
+|-----------|--------|-------------|
+| Rate | $\lambda$ | Expected number of events per unit time/space |
+| Random variable | $X$ | Count of events (0 to ∞) |
+
+**Key property:** Mean = Variance = $\lambda$
+
+**Note:** This $\lambda$ is NOT the same as $\lambda$ for population growth rates!
+
+**Notation:** If random variable $X$ follows a Poisson distribution with rate $\lambda$, we write:
+
+$$X \sim \text{Poisson}(\lambda)$$
+
+For example, if a plant produces an average of 8 seeds:
+
+$$X \sim \text{Poisson}(8)$$
+
+where $X$ is the realized number of seeds (could be 0, 1, 2, 3, ... with no upper bound).
+
+</div>
+<br>
+
+Compare distributions with different $\lambda$ values:
+
+```{r}
+# crossing() creates all combinations of count and lambda values
+# dpois() gives the probability mass for each combination
+crossing(count = 0:25, lambda = c(5, 10, 15)) %>%  
+  mutate(mass = dpois(count, lambda)) %>%  
+  ggplot(aes(x = count, y = mass, fill = factor(lambda))) +  
+  geom_bar(stat = "identity", position = "identity", alpha = 0.5) +  
+  scale_fill_discrete(name = expression(lambda)) +
+  theme_minimal(base_size = 15) +  
+  xlab("Count") + ylab("Probability Mass")
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 7</font>
+
+__1) Explain why the relative shapes of the distributions above make sense given that $\lambda$ equals both the mean and variance.__
+
+__2) Demonstrate this property by simulating 10,000 values each from Poisson distributions with $\lambda = 5$, $\lambda = 10$, and $\lambda = 15$. Display a table comparing $\lambda$, the sample mean, and the sample variance for each.__
+
+*Hint: Use `rpois(10000, lambda = ...)` to generate samples, then `mean()` and `var()` to compute statistics.*
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+**Part 1:** 
+**Simplified Explanation of Distribution Shapes: The Poisson distribution shows how often events happen on average, called $\lambda$. When $\lambda$ is small (like 5), most counts are low and close together. When $\lambda$ is bigger (like 10 or 15), counts become higher and more spread out. The distribution shifts to the right and becomes less lopsided. That's why, in the plot, the bars get wider and move right as $\lambda$ grows, the average and spread both increase together.**
+
+ 
+
+**Part 2:**
+
+```{r}
+set.seed(123)  
+
+# Simulate samples from Poisson distributions with different lambdas
+lambda_values <- c(5, 10, 15)
+sample_size <- 10000
+
+# Generate simulated data for each lambda
+sim_data <- lapply(lambda_values, function(lam) {
+  samples <- rpois(sample_size, lambda = lam)
+  data.frame(
+    lambda = lam,
+    sample_mean = mean(samples),
+    sample_variance = var(samples)
+  )
+}) 
+
+# Combine results into one data frame
+results_df <- do.call(rbind, sim_data)
+results_df
+
+```
+
+</div>
+<br>
+
+## Quick Review: The Normal Distribution
+
+We introduced the <font color="#E0AC00">__normal (Gaussian) distribution__</font> in WS3. It's continuous, ranging from $-\infty$ to $\infty$, defined by mean ($\mu$) and standard deviation ($\sigma$), and written as $X \sim \text{Normal}(\mu, \sigma)$.
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**When to use each distribution:**
+
+| Distribution | Best for | Example |
+|--------------|----------|---------|
+| **Normal** | Continuous measurements, variation in rates | Rainfall, temperature, fecundity rates |
+| **Binomial** | Counts of successes out of $n$ trials | Survival (10 of 20 survived) |
+| **Poisson** | Counts of events with no upper bound | Number of offspring, individuals in a plot |
+
+</div>
+<br>
+
+## Two Sources of Stochasticity in Population Models
+
+Real populations experience randomness from multiple sources. Two are particularly important:
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**<font color="#E0AC00">Demographic stochasticity</font>: Chance variation in individual fates**
+
+Even when vital rates are constant, individual outcomes are probabilistic. An individual either survives or dies; it produces 0, 1, 2, or more offspring. When 100 individuals each have a survival probability of 0.8, the *expected* number of survivors is 80, but the *realized* number might be 76, 82, or 79—just by chance. This variation arises because individuals are discrete units with probabilistic fates.
+
+- Vital rates stay **constant**; variation comes from **individual-level chance**
+- Effects **diminish with population size** (in large populations, individual variation averages out)
+
+**<font color="#E0AC00">Environmental stochasticity</font>: Temporal variation in vital rates**
+
+Environmental conditions fluctuate over time—some years are good for survival and reproduction, others are bad. These fluctuations cause the vital rates themselves to vary from year to year. All individuals experience similar effects (a drought reduces everyone's survival).
+
+- **Vital rates fluctuate** over time due to environmental variation
+- Effects are **independent of population size**
+
+</div>
+<br>
+
+Both sources operate in real populations. Their relative importance depends on population size—demographic stochasticity dominates in small populations, while environmental stochasticity affects populations of all sizes.
+
+### Simulating Stochastic MPMs
+
+There are different ways to add stochasticity to matrix models. A common approach treats the deterministic projection as an **expected value** and draws realized population sizes from a probability distribution:
+
+```{r}
+N0 <- c(20, 14, 6)
+
+# Deterministic projection gives expected values
+exp_N1 <- ex_pmat %*% N0  
+
+# Realized values vary around expected values
+# Poisson distribution generates non-negative integers appropriate for counts
+N1 <- rpois(3, exp_N1)    
+
+data.frame(stage = 1:3, expected = as.vector(exp_N1), realized = N1)
+```
+
+This approach captures the idea that realized population sizes vary around their expected values. The variation introduced this way could reflect demographic stochasticity (chance differences in individual fates), environmental stochasticity (good years vs. bad years), or both—this simple approach doesn't distinguish between sources. The Poisson distribution is convenient because it produces non-negative integers (appropriate for counts) and has variance equal to its mean.
+
+To simulate across multiple years:
+
+```{r}
+iter <- 10
+
+# Storage matrix for stochastic simulation
+N_mat_stoch <- matrix(NA, nrow = iter + 1, ncol = 3)
+N_mat_stoch[1,] <- N0
+
+for(i in 1:iter){
+  # Calculate expected values from current population
+  exp_vals <- ex_pmat %*% N_mat_stoch[i,]
+  
+  # Draw realized population sizes
+  N_mat_stoch[i+1,] <- rpois(length(exp_vals), exp_vals)
+}
+
+N_mat_stoch
+```
+
+**Important:** We use the realized (random) population sizes for subsequent projections. This allows random fluctuations to compound over time.
+
+### Adding Variation in Vital Rates
+
+We can also make vital rates vary over time. Here, fecundity changes each year—representing year-to-year variation in environmental conditions:
+
+```{r}
+iter <- 10
+N0 <- c(20, 14, 6)
+
+N_mat_var_fec <- matrix(NA, nrow = iter + 1, ncol = 3)
+N_mat_var_fec[1,] <- N0
+
+for(i in 1:iter){
+  # Copy the projection matrix
+  A_temp <- ex_pmat
+  
+  # Fecundity (a rate) varies year to year due to environmental conditions
+  # Draw from normal distribution centered on baseline fecundity of 3
+  A_temp[1, 3] <- max(0, rnorm(1, mean = 3, sd = 0.5))
+  
+  # Project population and add variation in realized sizes
+  exp_vals <- A_temp %*% N_mat_var_fec[i,]
+  N_mat_var_fec[i+1,] <- rpois(length(exp_vals), pmax(exp_vals, 0))
+}
+
+N_mat_var_fec
+```
+
+This captures the idea that mean reproductive output varies from year to year due to environmental conditions. You could similarly make survival rates vary (using a beta distribution, which is bounded between 0 and 1).
+
+### Linking Vital Rates to Environmental Variables
+
+Rather than drawing vital rates from abstract distributions, we can link them to measurable environmental variables. This makes the model more mechanistic—we can explore how specific environmental changes affect population dynamics.
+
+```{r}
+# Fecundity depends on rainfall: F = 3 + 1.5*R
+# Higher rainfall increases fecundity (better conditions for reproduction)
+
+iter <- 10
+N0 <- c(20, 14, 6)
+
+N_mat_rain <- matrix(NA, nrow = iter + 1, ncol = 3)
+N_mat_rain[1,] <- N0
+
+for(i in 1:iter){
+  # Draw this year's rainfall from Normal(0, 1)
+  rainfall <- rnorm(1, mean = 0, sd = 1)
+  
+  # Modify fecundity based on rainfall
+  A_temp <- ex_pmat
+  new_fecundity <- 3 + 1.5 * rainfall  # Positive relationship
+  A_temp[1, 3] <- max(0, new_fecundity)
+  
+  # Project with stochastic realization
+  exp_vals <- A_temp %*% N_mat_rain[i,]
+  N_mat_rain[i+1,] <- rpois(length(exp_vals), pmax(exp_vals, 0))
+}
+
+N_mat_rain
+```
+
+This links population dynamics to environmental drivers, making the model more useful for prediction under changing conditions.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 8</font>
+
+__Perform a stochastic simulation of Species A for 25 years, starting from $\mathbf{N}_0 = [10, 10, 10, 10]$. Make fecundity depend on rainfall using the relationships $F_3 = 12 + 5R$ and $F_4 = 25 + 8R$, where $R \sim \text{Normal}(0, 1)$. Include stochastic variation in realized population sizes (Poisson). Plot the four stages across time.__
+
+*Hint: Combine the patterns from above—draw rainfall each year, modify fecundity in positions [1,3] and [1,4], then draw realized populations from Poisson.*
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+
+speciesA_pmat <- matrix(c(
+  0,     0,     12,    25,    # Fecundity from stages 3 and 4 (modified by rainfall)
+  0.15,  0,     0,     0,     # Seedling to juvenile
+  0,     0.30,  0.40,  0,     # Juvenile to small adult, small adult stasis
+  0,     0,     0.25,  0.55   # Small to large adult, large adult stasis
+), nrow = 4, byrow = TRUE)
+
+# Initial population vector for four stages
+N0 <- c(10, 10, 10, 10)
+
+# Number of years to simulate
+iter <- 25
+
+N_mat <- matrix(NA, nrow = iter + 1, ncol = 4)
+N_mat[1, ] <- N0
+
+set.seed(123) 
+
+for (i in 1:iter) {
+
+  rainfall <- rnorm(1, mean = 0, sd = 1)
+  A_temp <- speciesA_pmat
+  
+  A_temp[1, 3] <- max(0, 12 + 5 * rainfall)  # Fecundity for Small Adults
+  A_temp[1, 4] <- max(0, 25 + 8 * rainfall)  # Fecundity for Large Adults
+  
+
+  exp_vals <- A_temp %*% N_mat[i, ]
+  N_mat[i + 1, ] <- rpois(length(exp_vals), pmax(exp_vals, 0))
+}
+
+N_df <- as.data.frame(N_mat) %>%
+  mutate(Year = 0:iter) %>%
+  pivot_longer(cols = 1:4, names_to = "Stage", values_to = "Count") %>%
+  mutate(Stage = factor(Stage,
+                        levels = paste0("V", 1:4),
+                        labels = c("Seedlings", "Juveniles", "Small Adults", "Large Adults")))
+
+# Plot population sizes 
+ggplot(N_df, aes(x = Year, y = Count, color = Stage)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  theme_minimal(base_size = 14) +
+  labs(title = "Stochastic Simulation of Species A with Rainfall-Dependent Fecundity",
+       x = "Year",
+       y = "Number of Individuals",
+       color = "Stage") +
+  scale_color_brewer(palette = "Set2")
+```
+
+**interpret: This plot shows the results of a 25-year simulation of Species A's population with four life stages: Seedlings, Juveniles, Small Adults, and Large Adults. The number of Seedlings increases dramatically over time, reaching peaks above 10,000 individuals. This highlights that reproduction, which depends on yearly rainfall, varies a lot and strongly affects the youngest stage. Juveniles and Small Adults grow more slowly and remain at much lower numbers throughout the simulation. Large Adults stay relatively steady and low in number. The fluctuations in population size across stages are caused by random yearly changes in rainfall and natural randomness in survival and reproduction.**
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #FFE285; border-radius: 5px;">
+__On pseudo-random number generators:__ Functions like `rbinom`, `rpois`, and `rnorm` are pseudo-random—they require a *seed* that initiates a sequence. With the same seed (set via `set.seed()`), you get identical "random" numbers. This enables reproducible stochastic analyses.
+</div>
+
+## Monte Carlo Simulations
+
+With stochastic models, a single simulation isn't sufficient—run it again and you'll get different results. To characterize the range of possible outcomes, we run many simulations and summarize the distribution. This is called <font color="#E0AC00">__Monte Carlo simulation__</font>.
+
+**Why use Monte Carlo methods?**
+
+1. **Nature is inherently variable:** Real populations experience random variation in individual fates and environmental conditions. Deterministic models ignore this variation; stochastic models embrace it.
+
+2. **Stochasticity can qualitatively change dynamics:** Random variation doesn't just add "noise" around a deterministic trajectory—it can fundamentally alter outcomes. Populations that would persist deterministically may go extinct due to a run of bad luck. This is especially important for small populations.
+
+3. **Quantifying risk and uncertainty:** Monte Carlo methods let us ask probabilistic questions: "What is the probability of extinction within 50 years?" rather than simply "Will it go extinct?"
+
+### Structure of a Monte Carlo Analysis
+
+The basic structure uses nested loops—an outer loop for independent simulations, an inner loop for time steps within each simulation:
+
+```{r}
+run_extinction_analysis <- function(n_sims, n_years, N0, sigma_rain) {
+  
+  extinction_count <- 0
+  
+  # OUTER LOOP: independent simulations
+  for(sim in 1:n_sims) {
+    
+    N_current <- N0
+    
+    # INNER LOOP: years within one simulation
+    for(year in 1:n_years) {
+      
+      # Environmental stochasticity: rainfall varies year to year
+      rainfall <- rnorm(1, mean = 0, sd = sigma_rain)
+      
+      # Modify fecundity based on rainfall (positive relationship)
+      A_temp <- speciesA_pmat
+      A_temp[1, 3] <- max(0, 12 + 5 * rainfall)
+      A_temp[1, 4] <- max(0, 25 + 8 * rainfall)
+      
+      # Project and add stochastic variation in realized sizes
+      exp_vals <- A_temp %*% N_current
+      N_current <- rpois(length(exp_vals), pmax(exp_vals, 0))
+      
+      if(sum(N_current) == 0) break  # Extinction occurred
+    }
+    
+    if(sum(N_current) == 0) extinction_count <- extinction_count + 1
+  }
+  
+  return(extinction_count / n_sims)  # Proportion that went extinct
+}
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 9</font>
+
+__Use the function above to calculate extinction probability for Species A across five levels of environmental stochasticity: $\sigma = 1, 2, 3, 4, 5$. Use 500 simulations of 50 years each, starting from $\mathbf{N}_0 = [3, 3, 3, 3]$. Plot extinction probability vs. $\sigma$ and interpret the result.__
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+
+library(ggplot2)
+library(dplyr)
+
+# Species A baseline projection matrix
+speciesA_pmat <- matrix(c(
+  0,     0,     12,    25,
+  0.15,  0,     0,     0,
+  0,     0.30,  0.40,  0,
+  0,     0,     0.25,  0.55
+), nrow = 4, byrow = TRUE)
+
+run_extinction_analysis <- function(n_sims, n_years, N0, sigma_rain) {
+  extinction_count <- 0
+  set.seed(123)
+  for(sim in 1:n_sims) {
+    N_current <- N0
+    for(year in 1:n_years) {
+      rainfall <- rnorm(1, mean = 0, sd = sigma_rain)
+      A_temp <- speciesA_pmat
+      A_temp[1, 3] <- max(0, 12 + 5 * rainfall)
+      A_temp[1, 4] <- max(0, 25 + 8 * rainfall)
+      exp_vals <- A_temp %*% N_current
+      N_current <- rpois(length(exp_vals), pmax(exp_vals, 0))
+      if(sum(N_current) == 0) break
+    }
+    if(sum(N_current) == 0) extinction_count <- extinction_count + 1
+  }
+  extinction_count / n_sims
+}
+
+# Parameters
+n_sims <- 500
+n_years <- 50
+N0 <- c(3, 3, 3, 3)
+sigma_values <- 1:5
+
+# Calculate extinction probabilities for different sigma values
+extinction_probs <- sapply(sigma_values, function(sigma) {
+  run_extinction_analysis(n_sims, n_years, N0, sigma)
+})
+
+# Prepare data for plotting
+results_df <- data.frame(sigma = sigma_values, extinction_prob = extinction_probs)
+
+# Plot extinction probability vs sigma
+ggplot(results_df, aes(x = sigma, y = extinction_prob)) +
+  geom_line(color = "blue", size = 1.2) +
+  geom_point(color = "red", size = 3) +
+  ylim(0,1) +
+  theme_minimal(base_size = 14) +
+  labs(title = "Extinction Probability vs Environmental Stochasticity (σ)",
+       x = expression(sigma),
+       y = "Extinction Probability")
+
+```
+
+**Interpretation:This plot shows that as environmental variability (σ) increases from 1 to 5, the chance that Species A goes extinct within 50 years also increases. When σ is low, the extinction chance is small (around 5%). When σ is higher, this chance grows to about 13%. This means that more unpredictable rainfall makes it more likely the population will die out over time. ** 
+
+</div>
+<br>
+
+# Eigenanalysis of the Projection Matrix
+
+Matrices that describe system dynamics can be analyzed using <font color="#E0AC00">__eigenanalysis__</font>, which extracts <font color="#E0AC00">__eigenvectors__</font> (directions unchanged by the transformation) and <font color="#E0AC00">__eigenvalues__</font> (scaling factors). For a conceptual introduction, see [this visualization](https://youtu.be/PFDu9oVAE-g?si=qy3QyzOY1gvZYY5U).
+
+For projection matrices, eigenanalysis reveals key population properties without simulation.
+
+## Finite Rate of Increase (λ)
+
+The dominant eigenvalue equals the <font color="#E0AC00">__finite rate of increase__</font> $\lambda$—the population growth rate once stable stage distribution is reached.
+
+```{r}
+# eigen() performs eigenanalysis, returning eigenvalues and eigenvectors
+# For an n×n matrix, it returns n eigenvalues and n eigenvectors
+ex_eig <- eigen(ex_pmat)
+
+# Eigenvalues can be complex numbers (with real and imaginary parts)
+# Re() extracts just the real part
+# which.max() finds the position of the largest value
+# We want the "dominant" eigenvalue—the one with the largest real part
+pos_dom <- which.max(Re(ex_eig$values))
+
+# Extract the dominant eigenvalue and get its real part
+# This is λ, the finite rate of increase
+lambda <- Re(ex_eig$values[pos_dom])
+lambda
+```
+
+For Species A:
+
+```{r}
+# Same process for Species A
+spA_eig <- eigen(speciesA_pmat)
+
+# Find position of dominant (largest real part) eigenvalue
+pos_dom <- which.max(Re(spA_eig$values))
+
+# Extract λ
+lambda_spA <- Re(spA_eig$values[pos_dom])
+lambda_spA
+```
+
+Since λ > 1, Species A will grow exponentially at stable stage distribution.
+
+## Stable Stage Distribution
+
+The dominant eigenvector, normalized to sum to 1, gives the <font color="#E0AC00">__stable stage distribution__</font>—the equilibrium proportions in each stage:
+
+```{r}
+# eigen() stores eigenvectors as columns in a matrix called $vectors
+# We want the eigenvector corresponding to the dominant eigenvalue
+# [, pos_dom] selects column pos_dom (all rows, one column)
+# Re() extracts the real part (eigenvectors can also be complex)
+w1 <- Re(ex_eig$vectors[, pos_dom])
+
+# Normalize so proportions sum to 1
+# Divide each element by the sum of all elements
+ssd <- w1 / sum(w1)
+ssd
+```
+
+For Species A:
+
+```{r}
+# Extract dominant eigenvector for Species A
+w1_spA <- Re(spA_eig$vectors[, pos_dom])
+
+# Normalize to get proportions
+ssd_spA <- w1_spA / sum(w1_spA)
+
+# Display as percentages (multiply by 100, round to 1 decimal)
+round(ssd_spA * 100, 1)
+```
+
+## Reproductive Values
+
+<font color="#E0AC00">__Reproductive values__</font> describe each stage's contribution to future population growth. Calculate from the left eigenvector (eigenanalysis of the transposed matrix):
+
+```{r}
+# Reproductive values come from the LEFT eigenvector
+# The left eigenvector of A is the right eigenvector of A-transpose
+# t() transposes the matrix (swaps rows and columns)
+spA_eig_t <- eigen(t(speciesA_pmat))
+
+# Find the dominant eigenvalue position
+# Mod() gives the magnitude of complex numbers (like absolute value)
+pos_dom_t <- which.max(Mod(spA_eig_t$values))
+
+# Extract the corresponding eigenvector (this is the left eigenvector of original matrix)
+v1 <- Re(spA_eig_t$vectors[, pos_dom_t])
+
+# Normalize relative to Stage 1 (divide all values by the first value)
+# This makes Stage 1 reproductive value = 1 as a reference point
+rv_spA <- v1 / v1[1]
+rv_spA
+```
+
+Later stages have higher reproductive values—they contribute more to future growth.
+
+## Sensitivity and Elasticity
+
+<font color="#E0AC00">__Sensitivities__</font> quantify how $\lambda$ changes with small changes in each matrix element:
+
+$$\frac{\partial \lambda}{\partial a_{ij}} = \frac{v_{1[i]} w_{1[j]}}{\mathbf{v}_1 \cdot \mathbf{w}_1}$$
+
+```{r}
+# Sensitivity matrix = outer product of reproductive values and stable stage distribution
+# divided by their inner product (dot product)
+
+# matrix(rv_spA, ncol = 1) makes a column vector (4 rows, 1 column)
+# matrix(ssd_spA, nrow = 1) makes a row vector (1 row, 4 columns)
+# %*% multiplies them to get a 4×4 matrix (outer product)
+# sum(rv_spA * ssd_spA) calculates the dot product (inner product) for normalization
+
+s_spA <- matrix(rv_spA, ncol = 1) %*% matrix(ssd_spA, nrow = 1) / sum(rv_spA * ssd_spA)
+round(s_spA, 3)
+```
+
+<font color="#E0AC00">__Elasticities__</font> are proportional sensitivities, useful for comparing elements of different magnitudes:
+
+```{r}
+# Elasticity = sensitivity × (matrix element / λ)
+# This converts absolute sensitivity to proportional sensitivity
+# Element-wise multiplication (*) of sensitivity matrix with (A/λ)
+
+el_spA <- s_spA * (speciesA_pmat / lambda_spA)
+round(el_spA, 3)
+
+# Key property: elasticities always sum to 1
+sum(el_spA)
+```
+
+Elasticities identify which vital rates most influence population growth—valuable for conservation prioritization. For example, if the elasticity for adult survival is highest, conservation efforts should prioritize protecting adults.
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #FFE285; border-radius: 5px;">
+__Sensitivity analysis beyond MPMs:__ The concept extends to any model. For logistic growth $dN/dt = rN(1 - N/K)$, we can find $\partial(dN/dt)/\partial K$ to quantify how growth depends on carrying capacity. For multispecies models, sensitivity analysis involves eigenanalysis of the Jacobian matrix.
+</div>
+
+# Glossary
+
+## Matrix Population Models
+
+**Matrix population model (MPM)**
+: A population model that accounts for age or stage structure using matrix algebra. Projects structured populations through time by multiplying a projection matrix by a vector of stage-specific abundances.
+
+**Projection matrix**
+: An $n \times n$ matrix containing transition rates between $n$ life stages. Element $a_{ij}$ represents the contribution of stage $j$ individuals to stage $i$ in the next time step.
+
+**Vital rates**
+: Demographic rates that determine population dynamics, including survival probabilities, growth rates, and fecundity. Combined into transition rates for MPMs.
+
+**Transition rates**
+: Elements of the projection matrix representing survival, growth, and reproduction. Survival/growth elements in a column should sum to ≤ 1; fecundity can be any non-negative value.
+
+**Stable stage distribution**
+: The equilibrium proportion of individuals in each stage, approached after sufficient time. Once reached, stage proportions remain constant even as total population changes.
+
+**Monotonic**
+: Consistently increasing or decreasing without reversals. MPM projections may not be monotonic before reaching stable stage distribution.
+
+## Stochasticity
+
+**Deterministic (model)**
+: A model producing identical results given the same parameters and initial conditions. No random component.
+
+**Stochasticity**
+: Randomness in a process. Unlike colloquial "randomness," stochastic processes are fundamentally unpredictable even with complete information.
+
+**Demographic stochasticity**
+: Randomness arising from the discrete, probabilistic nature of individual birth and death events. More important in small populations.
+
+**Environmental stochasticity**
+: Randomness in vital rates caused by fluctuating environmental conditions. Affects all individuals similarly.
+
+**Expected value**
+: The average outcome of a random process over many trials. In stochastic MPMs, deterministic projections serve as expected values for probability distributions.
+
+## Probability Distributions
+
+**Probability mass function**
+: A function giving the probability of each possible value of a discrete random variable. Probabilities sum to 1.
+
+**Probability density function**
+: A function describing the relative likelihood of values for a continuous random variable. Area under the curve equals 1.
+
+**Binomial distribution**
+: Distribution of the number of successes in $n$ independent trials with success probability $p$. Mean = $np$; variance = $np(1-p)$.
+
+**Poisson distribution**
+: Distribution of event counts occurring at a constant rate $\lambda$ in time or space. Mean = variance = $\lambda$. Note: this $\lambda$ differs from population growth rate.
+
+**Normal (Gaussian) distribution**
+: Continuous, symmetric distribution defined by mean ($\mu$) and standard deviation ($\sigma$). Ranges from $-\infty$ to $\infty$.
+
+## Monte Carlo Methods
+
+**Monte Carlo simulation**
+: A technique using repeated random sampling to obtain numerical results. Named after the Monte Carlo casino. Essential for characterizing distributions of stochastic outcomes.
+
+## Eigenanalysis
+
+**Eigenanalysis**
+: Mathematical procedure extracting eigenvectors and eigenvalues from a matrix. Reveals fundamental properties of linear transformations.
+
+**Eigenvector**
+: A vector whose direction is unchanged by a matrix transformation. For projection matrices, the dominant eigenvector gives the stable stage distribution.
+
+**Eigenvalue**
+: A scalar indicating how much an eigenvector is stretched or shrunk by the matrix. The dominant eigenvalue of a projection matrix equals $\lambda$, the finite rate of increase.
+
+**Finite rate of increase ($\lambda$)**
+: The dominant eigenvalue of the projection matrix. Indicates population growth rate once stable stage distribution is reached. $\lambda > 1$ means growth; $\lambda < 1$ means decline.
+
+**Reproductive value**
+: The expected contribution of an individual in a given stage to future population growth. Calculated from the left eigenvector of the projection matrix.
+
+## Sensitivity Analysis
+
+**Sensitivity (of $\lambda$)**
+: The partial derivative $\partial \lambda / \partial a_{ij}$, indicating how much $\lambda$ changes with a small absolute change in matrix element $a_{ij}$.
+
+**Elasticity**
+: Proportional sensitivity: $(a_{ij}/\lambda) \cdot (\partial \lambda / \partial a_{ij})$. Indicates how much $\lambda$ changes with a proportional change in $a_{ij}$. Useful for comparing elements of different magnitudes.

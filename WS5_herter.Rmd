@@ -1,0 +1,1527 @@
+---
+title: "WS 5: Species Interactions: Predator-Prey, Disease, and Competition"
+output:
+  html_document:
+    theme: "flatly"
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(6)
+library(tidyverse)
+library(patchwork)
+library(deSolve)
+```
+
+<font color="#E0AC00">__Vocabulary terms__</font> appear in bold yellow. <font color="#8B16B6">__Graded exercises__</font> appear in purple boxes. <font color="#5DBA49">__Clarifications about learning objectives__</font> appear in bold green.
+
+# Introduction
+
+This worksheet explores three classic applications of population models that capture species interactions: predator-prey dynamics, disease transmission, and plant competition. Each model system demonstrates how ecological complexity emerges from simple interaction rules, using either continuous-time differential equations or discrete-time difference equations.
+
+**Goals:**
+
+- Explore Lotka-Volterra models of predator-prey interactions
+- Understand functional responses and their ecological implications
+- Explore SIR models of disease dynamics
+- Introduce the annual plant competition model
+- Practice modifying and simulating population models
+
+**Models Covered:**
+
+- Lotka-Volterra predator-prey (continuous time)
+- SIR compartmental disease model (continuous time)
+- Annual plant competition model (discrete time)
+
+**Tools:** ODE solvers; simulation functions
+
+# Predator-Prey Interactions
+
+## The Lotka-Volterra Predator-Prey Model
+
+We've discussed Lotka-Volterra models in the context of the generalized form, but the original formulation was specifically for predator-prey interactions. Alfred J. Lotka developed these models while drawing parallels between physical and life sciences, modeling populations as autocatalytic reactions.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 1</font>
+
+__Identify one way predator-prey interactions might be similar to chemical reactions between molecules. Identify one way they might differ.__
+
+</div>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D0E8FF; border-radius: 5px;">
+
+**Similarity: Both predator-prey interactions and chemical reactions follow mass-action kinetics — the rate of interaction is proportional to the product of the densities (concentrations) of the two parties. In chemistry, a reaction rate depends on the concentration of reactants; in ecology, the predation rate term aPH depends on the product of prey density H and predator density P. Both systems also involve the "collision" or encounter of two entities, after which a transformation occurs (reactants become products; prey is consumed and converted to predator biomass).
+
+Diff: Unlike molecules, individual organisms have agency, memory, and behavioral responses to each other. A prey animal can detect and flee a predator; a molecule cannot. This means predator-prey interactions are fundamentally shaped by evolution, learning, and behavior — forces that have no analogue in chemistry. Additionally, chemical reactions are typically reversible or occur in both directions simultaneously, whereas predation is a one-way transfer (prey does not "consume" the predator back).**
+
+</div>
+<br>
+
+The general Lotka-Volterra predator-prey system is:
+
+$$
+\frac{dH}{dt} = bH - aPH
+$$
+$$
+\frac{dP}{dt} = eaPH - sP
+$$
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Model Parameters:**
+
+| Symbol | Name | Description | Typical Values |
+|--------|------|-------------|----------------|
+| $H$ | Prey population | Number of prey (herbivore) individuals | $H \geq 0$ |
+| $P$ | Predator population | Number of predator individuals | $P \geq 0$ |
+| $b$ | Prey birth rate | Intrinsic growth rate of prey in absence of predators | $b > 0$ |
+| $s$ | Predator death rate | Density-independent mortality rate of predators | $s > 0$ |
+| $a$ | Attack rate | Rate at which predators encounter and kill prey | $a > 0$ |
+| $e$ | Conversion efficiency | Fraction of consumed prey converted to predator births | $0 < e \leq 1$ |
+
+**Key terms:**
+
+- $aPH$: Total prey killed per unit time (mass action)
+- $eaPH$: Predator population growth from consumption
+- The linear relationship between prey density and predation rate is called a <font color="#E0AC00">__Type I functional response__</font>
+
+</div>
+<br>
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 2</font>
+
+__In the absence of predators ($P = 0$), how does the prey population grow? You should be able to answer this by examining the equation, without simulation.__
+
+</div>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D0E8FF; border-radius: 5px;">
+
+**When $P = 0$, the prey equation simplifies to:
+
+$$\frac{dH}{dt} = bH - a(0)H = bH$$
+This is exponential growth at rate $b$. Without predators, prey increase without bound at a constant per-capita rate. There is no density dependence or upper limit in the basic Lotka-Volterra formulation.**
+
+</div>
+<br>
+
+## Simulating Predator-Prey Dynamics
+
+To simulate predator-prey dynamics, we need to: (1) define the differential equations in a format the ODE solver can use, (2) set parameter values, and (3) run the solver and visualize results. Let's walk through this step by step, then package everything into a convenient plotting function.
+
+### Step 1: Define the ODE Model
+
+The `deSolve` package requires a function that takes time `t`, a vector of state variables `y`, and a list of parameters `params`. It must return a list containing the derivatives.
+
+```{r lv_ode_annotated}
+# Define the Lotka-Volterra predator-prey model
+# Arguments:
+#   t: current time (required by ode() but not used in this autonomous system)
+#   y: vector of state variables [H, P] (prey and predator populations)
+#   params: named vector of parameters (b, a, s, e)
+# Returns:
+#   list containing vector of derivatives [dH/dt, dP/dt]
+
+predpreyLV <- function(t, y, params) {
+  # Extract state variables from the y vector
+  H <- y[1]  # Prey population (first element)
+  P <- y[2]  # Predator population (second element)
+  
+  # with() lets us use parameter names directly without params$b, etc.
+  with(as.list(params), {
+    # Prey equation: births (bH) minus deaths from predation (aPH)
+    dH.dt <- b*H - a*P*H
+    
+    # Predator equation: births from consumption (eaPH) minus deaths (sP)
+    dP.dt <- e*a*P*H - s*P
+    
+    # Return derivatives as a list (required format for ode())
+    return(list(c(dH.dt, dP.dt)))
+  })
+}
+```
+
+### Step 2: Run the Simulation
+
+```{r run_sim_annotated}
+# Set parameter values as a named vector
+params1 <- c(b = 0.5,   # Prey birth rate
+             a = 0.01,  # Attack rate
+             s = 0.1,   # Predator death rate
+             e = 0.2)   # Conversion efficiency
+
+# Create time sequence: start at 0, end at 200, step by 0.1
+Time <- seq(0, 200, by = 0.1)
+
+# Run the ODE solver
+# Arguments:
+#   y: initial conditions as named vector [H0, P0]
+#   times: time points at which to compute solution
+#   func: the model function we defined above
+#   parms: parameter values
+LV.out <- as.data.frame(ode(c(H0 = 25, P0 = 5), Time, predpreyLV, params1))
+
+# Result is a data frame with columns: time, H0, P0
+head(LV.out)
+```
+
+### Step 3: Visualize Results
+
+```{r plot_sim_annotated}
+# Reshape data from wide to long format for ggplot
+# pivot_longer transforms columns H0 and P0 into rows
+LV.out_long <- pivot_longer(LV.out, 
+                            !time,           # Keep time as-is
+                            names_to = "species",    # New column for species names
+                            values_to = "pop_size")  # New column for population values
+
+# Create the plot
+ggplot(LV.out_long, aes(x = time, y = pop_size, color = species)) +
+  geom_line(linewidth = 2) +
+  theme_classic(base_size = 15) +
+  xlab("Time") + ylab("Population Size") +
+  scale_color_manual(values = c("#820263", "#FFF275"),
+                     name = "Species", labels = c("Prey", "Predator"))
+```
+
+Notice the oscillating dynamics—prey increase, predators follow, predators overconsume prey, predators decline, prey recover, and the cycle repeats.
+
+### Packaging into a Convenient Function
+
+To explore different parameter values efficiently, we wrap all the above steps into a single function. This function takes parameters as arguments and returns a plot:
+
+```{r lv_plot_function}
+# Convenient plotting function for Lotka-Volterra predator-prey model
+# Arguments:
+#   b, a, s, e: model parameters (see parameter table above)
+#   H0, P0: initial population sizes
+#   tmax: maximum time to simulate (default 200)
+#   tstep: time step for output (default 0.1)
+# Returns:
+#   ggplot object showing population dynamics over time
+
+lv_plot <- function(b, a, s, e, H0, P0, tmax = 200, tstep = 0.1) {
+  
+  # Define the model INSIDE the function
+  # This ensures the function is self-contained
+  predpreyLV <- function(t, y, params) {
+    H <- y[1]
+    P <- y[2]
+    with(as.list(params), {
+      dH.dt <- b*H - a*P*H
+      dP.dt <- e*a*P*H - s*P
+      return(list(c(dH.dt, dP.dt)))
+    })
+  }
+  
+  # Create parameter vector from function arguments
+  params1 <- c(b = b, a = a, s = s, e = e)
+  
+  # Set up time sequence
+  Time <- seq(0, tmax, by = tstep)
+  
+  # Run ODE solver
+  LV.out <- as.data.frame(ode(c(H0 = H0, P0 = P0), Time, predpreyLV, params1))
+  
+  # Reshape for plotting
+  LV.out_long <- pivot_longer(LV.out, !time, names_to = "species", values_to = "pop_size")
+  
+  # Create and return the plot
+  ggplot(LV.out_long, aes(x = time, y = pop_size, color = species)) +
+    geom_line(linewidth = 2) +
+    theme_classic(base_size = 15) +
+    xlab("Time") + ylab("Population Size") +
+    scale_color_manual(values = c("#820263", "#FFF275"),
+                       name = "Species", labels = c("Prey", "Predator"))
+}
+```
+
+Now we can quickly explore parameter effects with a single line of code:
+
+```{r test_lv_plot}
+# Test the function with baseline parameters
+lv_plot(b = 0.5, a = 0.01, s = 0.1, e = 0.2, H0 = 25, P0 = 5)
+```
+
+## Exploring Parameter Effects
+
+Here's an example of systematic parameter exploration. Let's compare the baseline to a higher prey birth rate:
+
+```{r parameter_exploration}
+# Baseline
+p1 <- lv_plot(b = 0.5, a = 0.01, s = 0.1, e = 0.2, H0 = 25, P0 = 5) +
+  ggtitle("Baseline: b = 0.5")
+
+# Higher prey birth rate
+p2 <- lv_plot(b = 1.0, a = 0.01, s = 0.1, e = 0.2, H0 = 25, P0 = 5) +
+  ggtitle("Higher prey birth: b = 1.0")
+
+# Use patchwork to stack plots vertically
+p1 / p2
+```
+
+With higher prey birth rate, both populations reach higher peaks and oscillate faster. Ecologically, faster-reproducing prey support larger predator populations.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 3</font>
+
+__Use `lv_plot()` to systematically explore each parameter. For each of the four parameters ($b$, $a$, $s$, $e$), compare a lower value to a higher value (keeping others at baseline). Describe ecologically what happens when you increase each parameter and why.__
+
+*Baseline values: b = 0.5, a = 0.01, s = 0.1, e = 0.2, H0 = 25, P0 = 5*
+
+</div>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D0E8FF; border-radius: 5px;">
+
+```{r}
+predpreyLV <- function(t, y, params) {
+  H <- y[1]
+  P <- y[2]
+  with(as.list(params), {
+    dH.dt <- b*H - a*P*H
+    dP.dt <- e*a*P*H - s*P
+    return(list(c(dH.dt, dP.dt)))
+  })
+}
+
+lv_plot <- function(b, a, s, e, H0, P0, tmax = 200, tstep = 0.1) {
+  predpreyLV <- function(t, y, params) {
+    H <- y[1]; P <- y[2]
+    with(as.list(params), {
+      dH.dt <- b*H - a*P*H
+      dP.dt <- e*a*P*H - s*P
+      return(list(c(dH.dt, dP.dt)))
+    })
+  }
+  params1 <- c(b = b, a = a, s = s, e = e)
+  Time <- seq(0, tmax, by = tstep)
+  LV.out <- as.data.frame(ode(c(H0 = H0, P0 = P0), Time, predpreyLV, params1))
+  LV.out_long <- pivot_longer(LV.out, !time, names_to = "species", values_to = "pop_size")
+  ggplot(LV.out_long, aes(x = time, y = pop_size, color = species)) +
+    geom_line(linewidth = 2) +
+    theme_classic(base_size = 15) +
+    xlab("Time") + ylab("Population Size") +
+    scale_color_manual(values = c("purple", "yellow"),
+                       name = "Species", labels = c("Prey", "Predator"))
+}
+```
+
+**Increasing $b$ causes both populations to reach higher peak abundances and the oscillation period shortens (cycles become faster). Faster-reproducing prey recover from predation more quickly, supporting larger predator populations.**
+
+
+```{r}
+p1 <- lv_plot(b = 0.25, a = 0.01, s = 0.1, e = 0.2, H0 = 25, P0 = 5) + ggtitle("Low prey birth: b = 0.25")
+p2 <- lv_plot(b = 0.5,  a = 0.01, s = 0.1, e = 0.2, H0 = 25, P0 = 5) + ggtitle("Baseline: b = 0.5")
+p3 <- lv_plot(b = 1.0,  a = 0.01, s = 0.1, e = 0.2, H0 = 25, P0 = 5) + ggtitle("High prey birth: b = 1.0")
+p1 / p2 / p3
+```
+
+
+**Increasing $a$ intensifies predation per encounter, destabilizing dynamics. Higher attack rates lead to larger boom-bust cycles; at very high values the model becomes unstable and populations crash to zero.**
+
+```{r}
+p1 <- lv_plot(b = 0.5, a = 0.002, s = 0.1, e = 0.2, H0 = 25, P0 = 5) + ggtitle("Low attack rate: a = 0.002")
+p2 <- lv_plot(b = 0.5, a = 0.01,  s = 0.1, e = 0.2, H0 = 25, P0 = 5) + ggtitle("Baseline: a = 0.01")
+p1 
+```
+
+**Increasing $s$ reduces predator abundance, releasing prey from top-down control. Prey reach higher equilibrium densities and the oscillation period increases. At very high $s$, predators may go extinct.**
+
+```{r}
+p1 <- lv_plot(b = 0.5, a = 0.01, s = 0.05, e = 0.2, H0 = 25, P0 = 5) + ggtitle("Low predator death: s = 0.05")
+p2 <- lv_plot(b = 0.5, a = 0.01, s = 0.1,  e = 0.2, H0 = 25, P0 = 5) + ggtitle("Baseline: s = 0.1")
+p3 <- lv_plot(b = 0.5, a = 0.01, s = 0.3,  e = 0.2, H0 = 25, P0 = 5) + ggtitle("High predator death: s = 0.3")
+p1 / p2 / p3
+```
+
+**Increasing $e$ means predators gain more reproductive benefit per prey consumed, supporting larger predator populations. High $e$ can cause predators to rapidly over-exploit prey, increasing oscillation amplitude.**
+
+```{r}
+p1 <- lv_plot(b = 0.5, a = 0.01, s = 0.1, e = 0.05, H0 = 25, P0 = 5) + ggtitle("Low efficiency: e = 0.05")
+p2 <- lv_plot(b = 0.5, a = 0.01, s = 0.1, e = 0.2,  H0 = 25, P0 = 5) + ggtitle("Baseline: e = 0.2")
+p3 <- lv_plot(b = 0.5, a = 0.01, s = 0.1, e = 0.6,  H0 = 25, P0 = 5) + ggtitle("High efficiency: e = 0.6")
+p1 / p2 / p3
+```
+
+</div>
+<br>
+
+## Model Instability
+
+As you explore parameters, you'll notice a key feature: instability. With certain parameter combinations, populations crash to zero or explode to infinity. This seems unrealistic—real food webs don't collapse from small perturbations. This observation has motivated ecologists to add realism to these models.
+
+## Adding Logistic Growth to Prey
+
+One stabilizing modification is density-dependent prey growth:
+
+$$
+\frac{dH}{dt} = bH\frac{K - H}{K} - aPH
+$$
+
+This adds a carrying capacity $K$ that limits prey growth even without predators.
+
+### Example: Modifying an ODE Function
+
+To modify the model, we change the differential equation inside the function. Here's how:
+
+```{r modify_example}
+# Original prey equation: dH.dt <- b*H - a*P*H
+# Modified with logistic growth: dH.dt <- b*H*(K-H)/K - a*P*H
+
+lv_plot_logistic <- function(b, a, s, e, K, H0, P0, tmax = 200, tstep = 0.1) {
+  # Define the modified model
+  predpreyLV_logistic <- function(t, y, params) {
+    H <- y[1]
+    P <- y[2]
+    with(as.list(params), {
+      # MODIFIED: Added logistic term (K-H)/K
+      dH.dt <- b*H*(K - H)/K - a*P*H
+      dP.dt <- e*a*P*H - s*P
+      return(list(c(dH.dt, dP.dt)))
+    })
+  }
+  
+  # Note: K is now included in parameters
+  params1 <- c(b = b, a = a, s = s, e = e, K = K)
+  Time <- seq(0, tmax, by = tstep)
+  LV.out <- as.data.frame(ode(c(H0 = H0, P0 = P0), Time, predpreyLV_logistic, params1))
+  LV.out_long <- pivot_longer(LV.out, !time, names_to = "species", values_to = "pop_size")
+  
+  ggplot(LV.out_long, aes(x = time, y = pop_size, color = species)) +
+    geom_line(linewidth = 2) +
+    theme_classic(base_size = 15) +
+    xlab("Time") + ylab("Population Size") +
+    scale_color_manual(values = c("#820263", "#FFF275"),
+                       name = "Species", labels = c("Prey", "Predator"))
+}
+
+# Test with K = 100
+lv_plot_logistic(b = 0.5, a = 0.1, s = 0.1, e = 0.2, K = 100, H0 = 25, P0 = 5)
+```
+
+Notice the dampening oscillations that converge to a stable equilibrium.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 4</font>
+
+__Use `lv_plot_logistic()` to compare dynamics with a small carrying capacity ($K = 50$) versus a large carrying capacity ($K = 500$). How does $K$ affect predator-prey dynamics?__
+
+</div>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D0E8FF; border-radius: 5px;">
+
+```{r}
+lv_plot_logistic <- function(b, a, s, e, K, H0, P0, tmax = 200, tstep = 0.1) {
+  predpreyLV_logistic <- function(t, y, params) {
+    H <- y[1]; P <- y[2]
+    with(as.list(params), {
+      dH.dt <- b*H*(K - H)/K - a*P*H
+      dP.dt <- e*a*P*H - s*P
+      return(list(c(dH.dt, dP.dt)))
+    })
+  }
+  params1 <- c(b = b, a = a, s = s, e = e, K = K)
+  Time <- seq(0, tmax, by = tstep)
+  LV.out <- as.data.frame(ode(c(H0 = H0, P0 = P0), Time, predpreyLV_logistic, params1))
+  LV.out_long <- pivot_longer(LV.out, !time, names_to = "species", values_to = "pop_size")
+  ggplot(LV.out_long, aes(x = time, y = pop_size, color = species)) +
+    geom_line(linewidth = 2) +
+    theme_classic(base_size = 15) +
+    xlab("Time") + ylab("Population Size") +
+    scale_color_manual(values = c("#820263", "#FFF275"),
+                       name = "Species", labels = c("Prey", "Predator"))
+}
+```
+
+```{r}
+p1 <- lv_plot_logistic(b = 0.5, a = 0.1, s = 0.1, e = 0.2, K = 50,  H0 = 25, P0 = 5) + ggtitle("Small K = 50")
+p2 <- lv_plot_logistic(b = 0.5, a = 0.1, s = 0.1, e = 0.2, K = 500, H0 = 25, P0 = 5) + ggtitle("Large K = 500")
+p1 / p2
+```
+
+**With small K = 50, both populations are constrained to low abundances and oscillations dampen quickly to a stable equilibrium. With **large K = 500**, prey support much larger predator populations, oscillations are initially higher amplitude, and the system takes longer to stabilize. In both cases, logistic growth stabilizes the dynamics — unlike the basic LV model which produces neutrally stable oscillations indefinitely.**
+
+</div>
+<br>
+
+## Functional Responses
+
+Another simplifying assumption of these models so far has been the <font color="#E0AC00">__functional response__</font>; that is, how predation rate depends on prey density.
+
+### Type I Functional Response
+
+Linear: We have thus far assumed that predation rate increases indefinitely with prey density.
+
+$$f(H) = aH$$
+
+### Type II Functional Response
+
+There are reasonable ecological reasons, however, to expect that prediction rate can't continue in increasing indefinitely.
+Saturating: predation rate levels off due to handling time $h$ (time spent processing each prey item).
+
+$$f(H) = \frac{aH}{1 + ahH}$$
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Type II Parameters:**
+
+| Symbol | Name | Description |
+|--------|------|-------------|
+| $a$ | Attack rate | Rate of successful prey encounters |
+| $h$ | Handling time | Time spent subduing/consuming each prey item |
+| $1/h$ | Maximum consumption rate | Upper limit of prey consumed per predator per time |
+
+At high prey density, predators spend all their time handling prey, so consumption saturates at $1/h$.
+
+</div>
+<br>
+
+### Type III Functional Response
+
+Sigmoidal: low predation at low prey density (e.g., prey switching, search image formation), then saturating.
+
+$$f(H) = \frac{aH^2}{1 + ahH^2}$$
+
+### Comparing Functional Responses
+
+```{r functional_responses}
+ggplot() +
+  geom_function(fun = function(x) x, aes(color = "Type I"), linewidth = 2) +
+  geom_function(fun = function(x) x/(1 + x), aes(color = "Type II"), linewidth = 2) +
+  geom_function(fun = function(x) x^2/(1 + x^2), aes(color = "Type III"), linewidth = 2) +
+  xlim(0, 3) +
+  theme_classic(base_size = 15) +
+  xlab("Prey Density") + ylab("Prey Consumed per Predator per Time") +
+  labs(color = "Response Type") +
+  scale_color_manual(values = c("Type I" = "black", "Type II" = "blue", "Type III" = "red"))
+```
+
+Here's a function to explore how attack rate, $a$, and handling time, $h$, affect Type II and III responses:
+
+```{r response_function}
+plot_responses <- function(a, h) {
+  ggplot() +
+    geom_function(fun = function(x) a*x/(1 + a*h*x), 
+                  aes(color = "Type II"), linewidth = 2) +
+    geom_function(fun = function(x) a*x^2/(1 + a*h*x^2), 
+                  aes(color = "Type III"), linewidth = 2) +
+    xlim(0, 3) +
+    theme_classic(base_size = 15) +
+    xlab("Prey Density") + ylab("Prey Consumed \nper Predator per Time") +
+    labs(color = "Response") +
+    ggtitle(paste("a =", a, ", h =", h))
+}
+
+# Compare different parameter values
+(plot_responses(a = 1, h = 1) + plot_responses(a = 4, h = 1)) /
+(plot_responses(a = 1, h = 0.5) + plot_responses(a = 1, h = 2))
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 5</font>
+
+__Using the plots above and/or `plot_responses()`, describe the effect of increasing: A) the attack rate $a$, and B) the handling time $h$ on the functional response curves.__
+*Hint: note the slopes of lines and the y-axis*
+</div>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D0E8FF; border-radius: 5px;">
+
+**A) Increasing $a$ steepens the initial slope of both the Type II and Type III curves — compare the top-left panel ($a = 1$) to the top-right panel ($a = 4$). At low prey densities, predators encounter and consume prey more rapidly. However, the saturation ceiling is unchanged (both curves still approach the same maximum of $1/h$), so the curves reach that plateau at lower prey densities. A higher $a$ essentially makes predators more efficient hunters when prey is scarce.
+
+B) Increasing handling time ($h$): Increasing $h$ lowers the saturation ceiling ($1/h$) — compare the bottom-left panel ($h = 0.5$, y-axis reaches ~1.6) to the bottom-right panel ($h = 2$, y-axis only reaches ~0.5). When predators spend more time processing each prey item, fewer total prey can be consumed per unit time regardless of how abundant prey are. The shape of the curves is preserved, but the maximum consumption rate is compressed downward. Ecologically, this reflects predators dealing with large or difficult prey requiring extended handling.**
+
+</div>
+<br>
+
+### Full Predator-Prey Model with Type II Response
+
+The complete model with Type II functional response:
+
+$$
+\frac{dH}{dt} = bH - \frac{aPH}{1 + ahH}
+$$
+$$
+\frac{dP}{dt} = \frac{eaPH}{1 + ahH} - sP
+$$
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Complete Model Parameters:**
+
+| Symbol | Name | Description |
+|--------|------|-------------|
+| $b$ | Prey birth rate | Intrinsic growth rate of prey |
+| $a$ | Attack rate | Encounter rate between predators and prey |
+| $h$ | Handling time | Processing time per prey item |
+| $e$ | Conversion efficiency | Prey biomass converted to predator biomass |
+| $s$ | Predator death rate | Background mortality of predators |
+
+</div>
+<br>
+
+# Disease Dynamics
+
+## The SIR Model
+
+Ecologists study disease dynamics by dividing populations into <font color="#E0AC00">__compartments__</font>. The classic <font color="#E0AC00">__SIR model__</font> tracks:
+
+- $S$: Susceptible individuals (can become infected)
+- $I$: Infected individuals (can transmit disease)
+- $R$: Recovered individuals (immune)
+
+The total population is constant: $N = S + I + R$
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**SIR Model Parameters:**
+
+| Symbol | Name | Description | Typical Values |
+|--------|------|-------------|----------------|
+| $\beta$ | Transmission rate | Rate of disease spread per contact | $\beta > 0$ |
+| $\gamma$ | Recovery rate | Rate at which infected individuals recover | $\gamma > 0$ |
+| $1/\gamma$ | Infectious period | Average time an individual remains infectious | Days to weeks |
+| $R_0 = \beta S_0 / \gamma$ | Basic reproduction number | Expected new infections from one infected individual | $R_0 > 1$ for epidemic |
+
+</div>
+<br>
+
+The differential equations are:
+
+$$
+\frac{dS}{dt} = -\beta SI
+$$
+$$
+\frac{dI}{dt} = \beta SI - \gamma I
+$$
+$$
+\frac{dR}{dt} = \gamma I
+$$
+
+This models a <font color="#E0AC00">__closed population__</font> (no births, deaths, or migration)—suitable for short-term epidemic dynamics.
+
+## Simulating SIR Dynamics
+
+```{r sir_function}
+SIR <- function(beta, gamma, S0, I0, R0, tmax, tstep = 0.1) {
+  SIR_mod <- function(t, y, params) {
+    S <- y[1]
+    I <- y[2]
+    R <- y[3]
+    with(as.list(params), {
+      dS.dt <- -B * I * S
+      dI.dt <- B * I * S - G * I
+      dR.dt <- G * I
+      return(list(c(dS.dt, dI.dt, dR.dt)))
+    })
+  }
+  
+  params1 <- c(B = beta, G = gamma)
+  Time <- seq(0, tmax, by = tstep)
+  SIR.out <- as.data.frame(ode(c(S0, I0, R0), Time, SIR_mod, params1))
+  names(SIR.out) <- c("time", "S", "I", "R")
+  SIR.out_long <- pivot_longer(SIR.out, !time, 
+                                names_to = "compartment", values_to = "size")
+  
+  ggplot(SIR.out_long, aes(x = time, y = size, color = compartment)) +
+    geom_line(linewidth = 2) +
+    theme_classic(base_size = 15) +
+    xlab("Time") + ylab("Number of Individuals") +
+    scale_color_manual(values = c("I" = "#820263", "R" = "#FFF275", "S" = "#2E86AB"),
+                       name = "Compartment",
+                       labels = c("Infected", "Recovered", "Susceptible"))
+}
+```
+
+Example outbreak:
+
+```{r sir_example}
+SIR(beta = 0.0005, gamma = 0.05, S0 = 499, I0 = 1, R0 = 0, tmax = 100)
+```
+
+The epidemic curve shows:
+
+1. Initial slow growth (few infected individuals)
+2. Rapid spread as $I$ increases
+3. Peak when transmission rate equals recovery rate
+4. Decline as susceptibles are depleted
+5. Final state: most individuals recovered (immune)
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 6</font>
+
+__Repeat the simulation above but double the transmission rate ($\beta = 0.001$). How does this change the disease dynamics? Consider: peak infection size, timing of peak, and final epidemic size.__
+
+</div>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D0E8FF; border-radius: 5px;">
+
+```{r}
+SIR <- function(beta, gamma, S0, I0, R0, tmax, tstep = 0.1) {
+  SIR_mod <- function(t, y, params) {
+    S <- y[1]; I <- y[2]; R <- y[3]
+    with(as.list(params), {
+      dS.dt <- -B * I * S
+      dI.dt <- B * I * S - G * I
+      dR.dt <- G * I
+      return(list(c(dS.dt, dI.dt, dR.dt)))
+    })
+  }
+  params1 <- c(B = beta, G = gamma)
+  Time <- seq(0, tmax, by = tstep)
+  SIR.out <- as.data.frame(ode(c(S0, I0, R0), Time, SIR_mod, params1))
+  names(SIR.out) <- c("time", "S", "I", "R")
+  SIR.out_long <- pivot_longer(SIR.out, !time, names_to = "compartment", values_to = "size")
+  ggplot(SIR.out_long, aes(x = time, y = size, color = compartment)) +
+    geom_line(linewidth = 2) +
+    theme_classic(base_size = 15) +
+    xlab("Time") + ylab("Number of Individuals") +
+    scale_color_manual(values = c("I" = "#820263", "R" = "#FFF275", "S" = "#2E86AB"),
+                       name = "Compartment",
+                       labels = c("Infected", "Recovered", "Susceptible"))
+}
+```
+
+```{r}
+p1 <- SIR(beta = 0.0005, gamma = 0.05, S0 = 499, I0 = 1, R0 = 0, tmax = 100) +
+  ggtitle(expression(paste("Baseline: ", beta, " = 0.0005, ", R[0], " ≈ 5.0")))
+p2 <- SIR(beta = 0.001, gamma = 0.05, S0 = 499, I0 = 1, R0 = 0, tmax = 100) +
+  ggtitle(expression(paste("Doubled: ", beta, " = 0.001, ", R[0], " ≈ 10.0")))
+p1 / p2
+```
+**Peak infection size:** The peak number of infected individuals increases from ~220 (baseline) to ~330 (doubled $\beta$). Faster transmission spreads the disease through the susceptible 
+population more rapidly before depletion slows it down.
+
+**Timing of peak:** The peak shifts from ~day 35 to ~day 20. Doubling $\beta$ accelerates the exponential growth phase, compressing the epidemic into a shorter window.
+
+**Final epidemic size:** Nearly the entire population (~490 out of 500) ends up recovered in both scenarios, but the doubled $\beta$ reaches that endpoint faster. This makes sense 
+given $R_0 = \beta S_0 / \gamma$ doubles from ~5.0 to ~10.0 — a higher $R_0$ means the epidemic burns through susceptibles more aggressively, leaving very few uninfected by the end.
+In summary, doubling $\beta$ produces a faster and larger epidemic peak, but the final epidemic size is similar because both $R_0$ values are already large enough to infect nearly 
+the whole population.**
+
+</div>
+<br>
+
+## Model Extensions
+
+The SIR framework is highly flexible. Common extensions include:
+
+| Model | Compartments | Application |
+|-------|--------------|-------------|
+| SIS | S → I → S | Diseases without lasting immunity (e.g., common cold) |
+| SEIR | S → E → I → R | Diseases with latent period (E = exposed but not infectious) |
+| SIRS | S → I → R → S | Waning immunity |
+| SIR with vaccination | S → V | Vaccination programs |
+
+# Annual Plant Competition
+
+Annual plant communities have become important model systems in population and community ecology. Several features make them ideal for connecting theory to data. First, their life cycle is tractable: plants germinate, grow, reproduce, and die within a single growing season, so researchers can measure all key demographic rates (germination, survival, fecundity, and competition) in one year. Second, their population dynamics are naturally discrete (generation to generation), matching the structure of difference equation models without requiring the approximations needed for continuously reproducing organisms. Third, annual plant communities have been the proving ground for much of modern coexistence theory.
+
+## Life Cycle Diagram
+
+The following diagram illustrates the annual plant life cycle and how it maps to our model parameters:
+
+```{r lifecycle_diagram, echo=FALSE, fig.width=8, fig.height=5, warning=FALSE}
+# Annual plant lifecycle diagram
+
+box_width <- .5
+
+ggplot() +
+  # === BOXES ===
+  # Seeds (Year t)
+  annotate("rect", xmin = 0, xmax = 2, ymin = 2.5, ymax = 3.5,
+           fill = "#8B4513", alpha = 0.3, color = "#8B4513", linewidth = box_width) +
+  annotate("text", x = 1, y = 3, label = "Seeds\n(Year t)", size = 5, fontface = "bold") +
+  
+
+  # Adults
+  annotate("rect", xmin = 0, xmax = 2, ymin = 4.8, ymax = 5.8,
+           fill = "#228B22", alpha = 0.3, color = "#228B22", linewidth = box_width) +
+  annotate("text", x = 1, y = 5.3, label = "Adults", size = 5, fontface = "bold") +
+  
+  # Seed Bank
+  annotate("rect", xmin = 0, xmax = 2, ymin = 0.3, ymax = 1.3,
+           fill = "#D2691E", alpha = 0.3, color = "#D2691E", linewidth = box_width) +
+  annotate("text", x = 1, y = 0.8, label = "Seed Bank", size = 5, fontface = "bold") +
+  
+  # New Seeds
+  annotate("rect", xmin = 4, xmax = 6, ymin = 3.5, ymax = 4.5,
+           fill = "#FF6B35", alpha = 0.3, color = "#FF6B35", linewidth = box_width) +
+  annotate("text", x = 5, y = 4, label = "New Seeds", size = 5, fontface = "bold") +
+  
+  # Surviving Bank Seeds
+  annotate("rect", xmin = 4, xmax = 6, ymin = 0.3, ymax = 1.3,
+           fill = "#D2691E", alpha = 0.3, color = "#D2691E", linewidth = box_width) +
+  annotate("text", x = 5, y = 0.8, label = "Surviving\nBank Seeds", size = 4, fontface = "bold") +
+  
+  # Seeds (Year t+1)
+  annotate("rect", xmin = 7.5, xmax = 9.5, ymin = 2, ymax = 3,
+           fill = "#8B4513", alpha = 0.3, color = "#8B4513", linewidth = box_width) +
+  annotate("text", x = 8.5, y = 2.5, label = "Seeds\n(Year t+1)", size = 5, fontface = "bold") +
+  
+  # === ARROWS ===
+  # Seeds to Adults (g)
+  annotate("segment", x = 1, xend = 1, y = 3.5, yend = 4.8,
+           arrow = arrow(length = unit(0.3, "cm")), linewidth = 1.5, color = "#228B22") +
+  
+ # Seeds to Seed Bank (1-g)
+  annotate("segment", x = 1, xend = 1, y = 2.5, yend = 1.3,
+           arrow = arrow(length = unit(0.3, "cm")), linewidth = 1.5, color = "#8B4513") +
+  
+  # Seed Bank to Surviving (s)
+  annotate("segment", x = 2, xend = 4, y = 0.8, yend = 0.8,
+           arrow = arrow(length = unit(0.3, "cm")), linewidth = 1.5, color = "#D2691E") +
+  
+  # Adults to New Seeds (curved, F)
+  geom_curve(aes(x = 2, xend = 4, y = 5.3, yend = 4.2),
+             arrow = arrow(length = unit(0.3, "cm")), linewidth = 1.5, 
+             color = "#FF6B35", curvature = -0.3) +
+  
+  # New Seeds to Year t+1
+  annotate("segment", x = 6, xend = 7.5, y = 4, yend = 2.8,
+           arrow = arrow(length = unit(0.3, "cm")), linewidth = 1.5, color = "black") +
+  
+  # Surviving to Year t+1
+  annotate("segment", x = 6, xend = 7.5, y = 0.8, yend = 2.2,
+           arrow = arrow(length = unit(0.3, "cm")), linewidth = 1.5, color = "black") +
+  
+  # === LABELS (positioned to not overlap arrows) ===
+  # Arrow labels
+  annotate("text", x = 0.5, y = 4.15, label = "g", size = 5, color = "#228B22", fontface = "bold") +
+  annotate("text", x = 0.4, y = 1.9, label = "1-g", size = 4, color = "#8B4513", fontface = "bold") +
+  annotate("text", x = 3, y = 1.2, label = "s", size = 5, color = "#D2691E", fontface = "bold") +
+  annotate("text", x = 3.5, y = 5.5, label = "F", size = 5, color = "#FF6B35", fontface = "bold") +
+  
+  # Quantity labels (below/beside boxes)
+  annotate("text", x = 2.3, y = 3, label = expression(N[t]), size = 5, color = "#8B4513") +
+  annotate("text", x = .5, y = 6, label = expression(gN[t]), size = 5, color = "#228B22") +
+  annotate("text", x = 1, y = -0.1, label = expression((1-g)*N[t]), size = 4, color = "#D2691E") +
+  annotate("text", x = 5, y = 3.1, label = expression(gN[t]*F), size = 4, color = "#FF6B35") +
+  annotate("text", x = 5, y = -0.1, label = expression(s(1-g)*N[t]), size = 4, color = "#D2691E") +
+  annotate("text", x = 8.5, y = 1.6, label = expression(N[t+1]), size = 5, color = "#8B4513") +
+  
+  # Plus sign
+  annotate("text", x = 6.9, y = 2.5, label = "+", size = 10, fontface = "bold") +
+  
+  # === EQUATION BOX ===
+  annotate("rect", xmin = 2, xmax = 7.5, ymin = -1.4, ymax = -0.6,
+           fill = "white", color = "black", linewidth = 1) +
+  annotate("text", x = 4.75, y = -1, size = 5,
+           label = expression(N[t+1] == s(1-g)*N[t] + g*N[t]*F)) +
+  
+  theme_void() +
+  xlim(-0.5, 10.5) + 
+  ylim(-1.7, 6.3)
+```
+
+**Key transitions:**
+
+- **Germination ($g$)**: Fraction of seeds that sprout and become adults
+- **Fecundity ($F$)**: Seeds produced per adult, decreasing with density
+- **Seed bank ($1-g$)**: Seeds that don't germinate remain dormant
+- **Seed survival ($s$)**: Fraction of dormant seeds surviving to next year
+
+## Building the Model
+
+Annual plants complete their lifecycle in one year, making them excellent study systems. A simple model of annual plant growth adapts discrete logistic growth:
+
+$$
+N_{t+1} = gN_tF
+$$
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Model Parameters:**
+
+| Symbol | Name | Description | Typical Values |
+|--------|------|-------------|----------------|
+| $N_t$ | Population size | Number of seeds at time $t$ | $N_t \geq 0$ |
+| $g$ | Germination rate | Proportion of seeds that germinate | $0 < g \leq 1$ |
+| $F$ | Fecundity | Seeds produced per germinated plant | $F \geq 0$ |
+
+</div>
+<br>
+
+Fecundity is density-dependent:
+
+$$
+F = \frac{\lambda}{1 + \alpha N_t g}
+$$
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Fecundity Parameters:**
+
+| Symbol | Name | Description | Typical Values |
+|--------|------|-------------|----------------|
+| $\lambda$ | Intrinsic growth rate | Seeds per plant without competition | $\lambda > 0$ |
+| $\alpha$ | Intraspecific competition | Per capita competitive effect | $\alpha > 0$ |
+
+As population increases, per-capita fecundity decreases due to resource competition or apparent competition (shared enemies).
+
+</div>
+<br>
+
+## Adding a Seed Bank
+
+Annual plants can remain dormant as seeds, so we add seed bank carryover:
+
+$$
+N_{t+1} = s(1-g)N_t + gN_tF
+$$
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Complete Single-Species Model:**
+
+| Symbol | Name | Description |
+|--------|------|-------------|
+| $s$ | Seed survival | Proportion of ungerminated seeds surviving to next year |
+| $(1-g)$ | Non-germination | Proportion of seeds that don't germinate |
+| $s(1-g)N_t$ | Seed bank contribution | Seeds persisting from previous year |
+| $gN_tF$ | Reproduction contribution | New seeds from germinated plants |
+
+</div>
+<br>
+
+## Simulating Annual Plant Dynamics
+
+Here's an example simulation function:
+
+```{r annual_plant_example}
+# Function to simulate single-species annual plant dynamics
+simulate_annual <- function(lambda, alpha, g, s, N0, years) {
+  N <- numeric(years + 1)
+  N[1] <- N0
+  
+  for(t in 1:years) {
+    # Calculate density-dependent fecundity
+    F_t <- lambda / (1 + alpha * N[t] * g)
+    
+    # Calculate next year's population
+    # Seed bank contribution + reproduction contribution
+    N[t+1] <- s * (1 - g) * N[t] + g * N[t] * F_t
+  }
+  
+  return(data.frame(year = 0:years, N = N))
+}
+
+# Example simulation
+result <- simulate_annual(lambda = 50, alpha = 0.01, g = 0.4, s = 0.6, 
+                          N0 = 100, years = 30)
+
+ggplot(result, aes(x = year, y = N)) +
+  geom_line(linewidth = 2) +
+  geom_point(size = 2) +
+  theme_classic(base_size = 15) +
+  xlab("Year") + ylab("Population Size (seeds)")
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 7</font>
+
+__Modify `simulate_annual()` to return a plot instead of a data frame. Name it `plot_annual()`. Demonstrate its use with parameters: $\lambda = 50$, $\alpha = 0.01$, $g = 0.4$, $s = 0.6$, $N_0 = 100$, years = 30.__
+
+</div>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D0E8FF; border-radius: 5px;">
+
+```{r}
+simulate_annual <- function(lambda, alpha, g, s, N0, years) {
+  N <- numeric(years + 1)
+  N[1] <- N0
+  for(t in 1:years) {
+    F_t <- lambda / (1 + alpha * N[t] * g)
+    N[t+1] <- s * (1 - g) * N[t] + g * N[t] * F_t
+  }
+  return(data.frame(year = 0:years, N = N))
+}
+
+# Modified to return a plot
+plot_annual <- function(lambda, alpha, g, s, N0, years) {
+  result <- simulate_annual(lambda, alpha, g, s, N0, years)
+  ggplot(result, aes(x = year, y = N)) +
+    geom_line(linewidth = 2) +
+    geom_point(size = 2) +
+    theme_classic(base_size = 15) +
+    xlab("Year") + ylab("Population Size (seeds)")
+}
+
+# Demonstration
+plot_annual(lambda = 50, alpha = 0.01, g = 0.4, s = 0.6, N0 = 100, years = 30)
+```
+
+
+</div>
+<br>
+
+## Finding Equilibrium Population Size
+
+To find equilibrium abundance, we simulate until the population stabilizes. We use a <font color="#E0AC00">__burn-in period__</font>—initial time steps discarded to allow the system to reach equilibrium.
+
+```{r burnin_example}
+# Function returning equilibrium (average after burn-in)
+get_equilibrium <- function(lambda, alpha, g, s, N0, years, burnin) {
+  # Simulate
+  result <- simulate_annual(lambda, alpha, g, s, N0, years)
+  
+  # Average population size after burn-in
+  equilibrium <- mean(result$N[(burnin + 1):(years + 1)])
+  
+  return(equilibrium)
+}
+
+# Example: 50 years total, discard first 20 as burn-in
+get_equilibrium(lambda = 50, alpha = 0.01, g = 0.4, s = 0.6, 
+                N0 = 100, years = 50, burnin = 20)
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 8</font>
+
+__Verify that your `simulate_annual()` function produces a population that reaches equilibrium by plotting a 100-year time series. Does the population stabilize? At approximately what value?__
+
+</div>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D0E8FF; border-radius: 5px;">
+
+```{r}
+get_equilibrium <- function(lambda, alpha, g, s, N0, years, burnin) {
+  result <- simulate_annual(lambda, alpha, g, s, N0, years)
+  equilibrium <- mean(result$N[(burnin + 1):(years + 1)])
+  return(equilibrium)
+}
+
+# 100-year time series
+plot_annual(lambda = 50, alpha = 0.01, g = 0.4, s = 0.6, N0 = 100, years = 100)
+```
+
+```{r}
+eq <- get_equilibrium(lambda = 50, alpha = 0.01, g = 0.4, s = 0.6,
+                      N0 = 100, years = 50, burnin = 20)
+cat("Equilibrium population size:", round(eq, 1), "seeds\n")
+```
+**It reaches a stable equilibrium at approximately N ≈ 7,500 seeds by around year 10 and remains flat for the remaining 
+90 years, confirming true equilibrium**
+</div>
+<br>
+
+## Multi-Species Competition Model
+
+Plants rarely live in monocultures. Extending to multiple species:
+
+$$
+N_{i,t+1} = s_i(1-g_i)N_{i,t} + g_iN_{i,t}F_{i,t}
+$$
+
+with fecundity:
+
+$$
+F_{i,t} = \frac{\lambda_i}{1 + \sum_{j=1}^S \alpha_{ij}N_{j,t}g_j}
+$$
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Multi-Species Parameters:**
+
+| Symbol | Name | Description |
+|--------|------|-------------|
+| $S$ | Species richness | Total number of species |
+| $\alpha_{ij}$ | Interaction coefficient | Per capita effect of species $j$ on species $i$ |
+| $\alpha_{ii}$ | Intraspecific competition | Species $i$'s effect on itself (diagonal of interaction matrix) |
+| $\alpha_{ij}, i \neq j$ | Interspecific competition | Effect of other species |
+
+</div>
+<br>
+
+## Simulating Community Dynamics
+
+### Deterministic Simulation
+
+```{r community_sim_example}
+# Simulation function for 3-species community
+simulate_community <- function(l_vals, a_vals, g_vals, s_vals, N0, years) {
+  N_mat <- matrix(NA, nrow = years + 1, ncol = 3)
+  N_mat[1, ] <- N0
+  
+  for(t in 1:years) {
+    for(sp in 1:3) {
+      # Calculate competition term
+      comp_term <- sum(a_vals[sp, ] * N_mat[t, ] * g_vals)
+      
+      # Density-dependent fecundity
+      F_t <- l_vals[sp] / (1 + comp_term)
+      
+      # Next year's population
+      N_mat[t+1, sp] <- s_vals[sp] * (1 - g_vals[sp]) * N_mat[t, sp] +
+                         g_vals[sp] * N_mat[t, sp] * F_t
+    }
+  }
+  
+  return(N_mat)
+}
+
+# Example parameters for 3 species
+l_vals <- c(50, 45, 55)  # Intrinsic growth rates
+a_vals <- matrix(c(0.01, 0.008, 0.005,   # Competition matrix
+                   0.006, 0.01, 0.007,
+                   0.004, 0.009, 0.01), 
+                 nrow = 3, byrow = TRUE)
+g_vals <- c(0.4, 0.35, 0.45)  # Germination rates
+s_vals <- c(0.6, 0.55, 0.5)   # Seed survival rates
+
+# Run simulation
+N0 <- c(25, 25, 25)
+years <- 50
+N_result <- simulate_community(l_vals, a_vals, g_vals, s_vals, N0, years)
+
+# Plot
+N_result %>%
+  as.data.frame() %>%
+  setNames(c("Sp1", "Sp2", "Sp3")) %>%
+  mutate(year = 0:years) %>%
+  pivot_longer(cols = 1:3, names_to = "Species", values_to = "N") %>%
+  ggplot(aes(x = year, y = N, color = Species)) +
+  geom_line(linewidth = 2) +
+  theme_classic(base_size = 15) +
+  xlab("Year") + ylab("Population Size")
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 9</font>
+
+__Run the community simulation with the example parameters above. Experiment with different starting conditions ($N_0$). Do all three species coexist? Does the outcome depend on initial conditions?__
+
+</div>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D0E8FF; border-radius: 5px;">
+
+```{r}
+simulate_community <- function(l_vals, a_vals, g_vals, s_vals, N0, years) {
+  N_mat <- matrix(NA, nrow = years + 1, ncol = 3)
+  N_mat[1, ] <- N0
+  for(t in 1:years) {
+    for(sp in 1:3) {
+      comp_term <- sum(a_vals[sp, ] * N_mat[t, ] * g_vals)
+      F_t <- l_vals[sp] / (1 + comp_term)
+      N_mat[t+1, sp] <- s_vals[sp] * (1 - g_vals[sp]) * N_mat[t, sp] +
+                         g_vals[sp] * N_mat[t, sp] * F_t
+    }
+  }
+  return(N_mat)
+}
+
+# Example parameters
+l_vals <- c(50, 45, 55)
+a_vals <- matrix(c(0.01, 0.008, 0.005,
+                   0.006, 0.01,  0.007,
+                   0.004, 0.009, 0.01),
+                 nrow = 3, byrow = TRUE)
+g_vals <- c(0.4, 0.35, 0.45)
+s_vals <- c(0.6, 0.55, 0.5)
+years  <- 50
+
+plot_community <- function(N_mat, title = "") {
+  N_mat %>%
+    as.data.frame() %>%
+    setNames(c("Sp1", "Sp2", "Sp3")) %>%
+    mutate(year = 0:years) %>%
+    pivot_longer(cols = 1:3, names_to = "Species", values_to = "N") %>%
+    ggplot(aes(x = year, y = N, color = Species)) +
+    geom_line(linewidth = 2) +
+    theme_classic(base_size = 15) +
+    xlab("Year") + ylab("Population Size") +
+    ggtitle(title)
+}
+```
+```{r}
+N1 <- simulate_community(l_vals, a_vals, g_vals, s_vals, N0 = c(25,  25,  25),  years)
+N2 <- simulate_community(l_vals, a_vals, g_vals, s_vals, N0 = c(100,  1, 100),  years)
+N3 <- simulate_community(l_vals, a_vals, g_vals, s_vals, N0 = c(1,  100,   1),  years)
+
+plot_community(N1, "Equal start: N0 = (25, 25, 25)") /
+plot_community(N2, "Species 2 rare: N0 = (100, 1, 100)") /
+plot_community(N3, "Species 2 dominant: N0 = (1, 100, 1)")
+```
+**All three species do NOT coexist.** Across all three starting conditions, Species 2 (green) consistently declines toward zero while Species 1 and Species 3 persist at high abundances 
+(~4000 and ~6000 seeds respectively).
+
+**The outcome does not depend on initial conditions.** Even when Species 2 starts dominant ($N_0 = (1, 100, 1)$, bottom panel), it initially reaches ~6000 seeds but is ultimately outcompeted and crashes to near zero by year ~30. Sp1 and Sp3 reach the same equilibrium abundances regardless of whether they started rare or common.
+
+This is consistent with **competitive exclusion** — Species 2 has the lowest intrinsic growth rate ($\lambda_2 = 45$ vs. $\lambda_1 = 50$, $\lambda_3 = 55$) and suffers relatively strong interspecific competition, making it unable to persist alongside the other two species at equilibrium. The fixed long-run outcome regardless of starting conditions indicates a **stable equilibrium**, not priority effects.**
+
+</div>
+<br>
+
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 10</font>
+
+__Species 2 is not doing well. What parameters could you change to make species 2 do better?   Make a plot with the altered parameter to allow species 2 to do better.__
+
+</div>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D0E8FF; border-radius: 5px;">
+
+```{r}
+N_baseline <- simulate_community(l_vals, a_vals, g_vals, s_vals, N0 = c(25, 25, 25), years)
+
+l_vals_mod <- c(50, 65, 55)  # Boost Species 2 lambda from 45 to 65
+N_modified <- simulate_community(l_vals_mod, a_vals, g_vals, s_vals, N0 = c(25, 25, 25), years)
+
+plot_community(N_baseline, "Baseline (lambda2 = 45)") /
+plot_community(N_modified, "Modified (lambda2 = 65)")
+```
+Increasing $\lambda_2$ from 45 to 65 dramatically improves Species 2's performance. In the **baseline** (top panel), Sp2 stabilizes at only ~500 seeds — far below Sp1 
+(~4000) and Sp3 (~6000). 
+
+In the **modified** model (bottom panel), Sp2 becomes the dominant species, reaching ~6500 seeds by year 50, while Sp1 and Sp3 are now suppressed to ~2000 seeds each. All three species still coexist, but the competitive hierarchy has completely reversed.
+
+This works because $\lambda$ directly sets the maximum number of seeds a plant can produce per year in the absence of competition. A higher $\lambda_2$ means Sp2 contributes more seeds per germinant, allowing it to maintain a larger population 
+that in turn suppresses competitors through the shared competition term $\sum \alpha_{ij} N_j g_j$ in the fecundity equation.** 
+
+</div>
+<br>
+
+### Adding Demographic Stochasticity
+
+Recall from earlier worksheets: demographic stochasticity treats deterministic projections as expected values of probability distributions. For annual plants:
+
+- **Seed bank survival**: Binomial (each seed survives or dies)
+- **Germination**: Binomial (each seed germinates or doesn't)
+- **Fecundity**: Poisson (seed count per plant)
+
+```{r stochastic_community}
+simulate_community_stochastic <- function(l_vals, a_vals, g_vals, s_vals, N0, years) {
+  N_mat <- matrix(NA, nrow = years + 1, ncol = 3)
+  N_mat[1, ] <- N0
+  
+  for(t in 1:years) {
+    for(sp in 1:3) {
+      # Current population
+      N_current <- round(N_mat[t, sp])  # Must be integer for binomial
+      
+      if(N_current == 0) {
+        N_mat[t+1, sp] <- 0
+        next
+      }
+      
+      # Stochastic germination
+      germinants <- rbinom(1, N_current, g_vals[sp])
+      non_germinants <- N_current - germinants
+      
+      # Stochastic seed bank survival
+      surviving_seeds <- rbinom(1, non_germinants, s_vals[sp])
+      
+      # Competition term (using expected germination for competitors)
+      comp_term <- sum(a_vals[sp, ] * N_mat[t, ] * g_vals)
+      
+      # Expected fecundity per germinant
+      F_expected <- l_vals[sp] / (1 + comp_term)
+      
+      # Stochastic seed production (each germinant produces Poisson seeds)
+      if(germinants > 0) {
+        new_seeds <- sum(rpois(germinants, F_expected))
+      } else {
+        new_seeds <- 0
+      }
+      
+      N_mat[t+1, sp] <- surviving_seeds + new_seeds
+    }
+  }
+  
+  return(N_mat)
+}
+
+# Compare deterministic vs stochastic
+set.seed(42)
+N_stoch <- simulate_community_stochastic(l_vals, a_vals, g_vals, s_vals, N0, years)
+
+# Plot comparison
+det_df <- N_result %>%
+  as.data.frame() %>%
+  setNames(c("Sp1", "Sp2", "Sp3")) %>%
+  mutate(year = 0:years, type = "Deterministic") %>%
+  pivot_longer(cols = 1:3, names_to = "Species", values_to = "N")
+
+stoch_df <- N_stoch %>%
+  as.data.frame() %>%
+  setNames(c("Sp1", "Sp2", "Sp3")) %>%
+  mutate(year = 0:years, type = "Stochastic") %>%
+  pivot_longer(cols = 1:3, names_to = "Species", values_to = "N")
+
+bind_rows(det_df, stoch_df) %>%
+  ggplot(aes(x = year, y = N, color = Species)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~type) +
+  theme_classic(base_size = 12) +
+  xlab("Year") + ylab("Population Size")
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 10</font>
+
+__Run the stochastic simulation 5 times and overlay the trajectories on a single plot (use transparency with `alpha`). How much variation do you see between runs? Does stochasticity affect which species persist?__
+
+</div>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D0E8FF; border-radius: 5px;">
+
+```{r}
+simulate_community_stochastic <- function(l_vals, a_vals, g_vals, s_vals, N0, years) {
+  N_mat <- matrix(NA, nrow = years + 1, ncol = 3)
+  N_mat[1, ] <- N0
+  for(t in 1:years) {
+    for(sp in 1:3) {
+      N_current <- round(N_mat[t, sp])
+      if(N_current == 0) { N_mat[t+1, sp] <- 0; next }
+      germinants       <- rbinom(1, N_current, g_vals[sp])
+      non_germinants   <- N_current - germinants
+      surviving_seeds  <- rbinom(1, non_germinants, s_vals[sp])
+      comp_term        <- sum(a_vals[sp, ] * N_mat[t, ] * g_vals)
+      F_expected       <- l_vals[sp] / (1 + comp_term)
+      new_seeds        <- if(germinants > 0) sum(rpois(germinants, F_expected)) else 0
+      N_mat[t+1, sp]   <- surviving_seeds + new_seeds
+    }
+  }
+  return(N_mat)
+}
+```
+
+
+```{r}
+all_runs <- lapply(1:5, function(i) {
+  N_s <- simulate_community_stochastic(l_vals, a_vals, g_vals, s_vals,
+                                        N0 = c(25, 25, 25), years = years)
+  as.data.frame(N_s) %>%
+    setNames(c("Sp1", "Sp2", "Sp3")) %>%
+    mutate(year = 0:years, run = factor(i)) %>%
+    pivot_longer(cols = 1:3, names_to = "Species", values_to = "N")
+})
+
+bind_rows(all_runs) %>%
+  ggplot(aes(x = year, y = N, color = Species, group = interaction(Species, run))) +
+  geom_line(alpha = 0.5, linewidth = 1) +
+  theme_classic(base_size = 15) +
+  xlab("Year") + ylab("Population Size") +
+  ggtitle("5 Stochastic Runs (alpha = 0.5)")
+```
+**Variation between runs:** Sp1 and Sp3 show relatively little variation across the 5 runs trajectories are tightly bundled, converging to consistent equilibria of ~4000 (Sp1) and 
+~6000 (Sp3) by year 10. Sp2 shows the most variation in early years (years 1–8), with runspeaking anywhere from ~500 to ~2000 seeds before all declining. However, despite this early 
+variation, all 5 runs converge to the same outcome.
+
+**Does stochasticity affect which species persist?** No — the outcome is identical across all 5 runs. Sp2 goes extinct in every run regardless of its early trajectory, while Sp1 and Sp3 always persist. This confirms that Sp2's exclusion is driven by deterministic competitive dynamics (low $\lambda_2$), not random chance. Stochasticity only affects the transient path, not the long-run outcome.
+
+This contrasts with cases where species are more evenly matched competitively — in those scenarios, demographic stochasticity can tip the outcome toward different winners across runs (i.e., priority effects + stochasticity can cause alternative stable states).**
+
+</div>
+<br>
+
+### A Simple Approach to add Environmental Stochasticity
+
+The demographic stochasticity model above is mechanistically detailed—it tracks random variation in germination, survival, and reproduction at the individual level. However, sometimes we want a simpler approach that just captures the overall effect of year-to-year environmental variation on population sizes.
+
+A simple alternative is to add random noise directly to population sizes after the deterministic calculation. We multiply the deterministic prediction by a lognormal random variable, which ensures populations stay positive and creates realistic right-skewed variation:
+
+```{r simple_stochastic}
+simulate_community_env_stochastic <- function(l_vals, a_vals, g_vals, s_vals, N0, years, 
+                                               cv = 0.1) {
+  # cv = coefficient of variation (standard deviation as fraction of mean)
+  # cv = 0 gives deterministic dynamics
+  # cv = 0.1 means populations fluctuate by roughly ±10-20% 
+  # cv = 0.3 means populations fluctuate by roughly ±30-60%
+  
+  N_mat <- matrix(NA, nrow = years + 1, ncol = 3)
+  N_mat[1, ] <- N0
+  
+  for(t in 1:years) {
+    for(sp in 1:3) {
+      # Calculate deterministic prediction
+      comp_term <- sum(a_vals[sp, ] * N_mat[t, ] * g_vals)
+      F_t <- l_vals[sp] / (1 + comp_term)
+      N_deterministic <- s_vals[sp] * (1 - g_vals[sp]) * N_mat[t, sp] +
+                         g_vals[sp] * N_mat[t, sp] * F_t
+      
+      # Add environmental noise: multiply by (1 + random deviation)
+      # The deviation is drawn from a normal distribution with SD = cv
+      env_effect <- 1 + rnorm(1, mean = 0, sd = cv)
+      
+      # Ensure population doesn't go negative
+      N_mat[t+1, sp] <- max(0, N_deterministic * env_effect)
+    }
+  }
+  
+  return(N_mat)
+}
+```
+
+Compare different levels of environmental variation:
+
+```{r compare_env_variation, fig.height=8}
+# set.seed(12)
+
+# Run with different cv values
+N_low <- simulate_community_env_stochastic(l_vals, a_vals, g_vals, s_vals, N0, years, cv = 0.1)
+N_med <- simulate_community_env_stochastic(l_vals, a_vals, g_vals, s_vals, N0, years, cv = 0.2)
+N_high <- simulate_community_env_stochastic(l_vals, a_vals, g_vals, s_vals, N0, years, cv = 0.4)
+
+# Plotting function
+plot_stoch <- function(N_mat, title) {
+  N_mat %>%
+    as.data.frame() %>%
+    setNames(c("Sp1", "Sp2", "Sp3")) %>%
+    mutate(year = 0:years) %>%
+    pivot_longer(cols = 1:3, names_to = "Species", values_to = "N") %>%
+    ggplot(aes(x = year, y = N, color = Species)) +
+    geom_line(linewidth = 1) +
+    theme_classic(base_size = 12) +
+    xlab("Year") + ylab("Population Size") +
+    ggtitle(title)
+}
+
+plot_stoch(N_result, "Deterministic (cv = 0)") /
+plot_stoch(N_low, "Low variation (cv = 0.1)") /
+plot_stoch(N_med, "Medium variation (cv = 0.2)") /
+plot_stoch(N_high, "High variation (cv = 0.4)")
+```
+
+This simple approach is useful when:
+
+- You want to explore how environmental variability affects dynamics without specifying exactly which demographic rates vary
+- You're teaching the concept of stochasticity without getting into the details of probability distributions for each vital rate
+- You want a quick way to add "noise" to explore model robustness
+
+
+# Summary
+
+This worksheet explored three important model systems for species interactions:
+
+**Predator-prey models:**
+
+- Basic Lotka-Volterra produces neutrally stable oscillations
+- Adding prey carrying capacity stabilizes dynamics
+- Functional responses (Type I, II, III) capture predator saturation
+- Model parameters control oscillation amplitude, frequency, and stability
+
+**Disease models:**
+
+- SIR compartmental model tracks disease spread
+- Transmission rate $\beta$ and recovery rate $\gamma$ determine epidemic dynamics
+- Basic reproduction number $R_0$ predicts whether epidemics occur
+- Extensions handle births, deaths, latent periods, waning immunity
+
+**Annual plant competition models:**
+
+- Discrete-time structure matches annual life cycles
+- Density-dependent fecundity creates negative feedback
+- Seed banks provide temporal storage buffering populations
+- Multi-species models enable coexistence analysis
+- Demographic stochasticity adds realistic variation
+
+All three model families demonstrate how ecological complexity emerges from simple interaction rules, and how simulation methods allow us to explore dynamics that are difficult to solve analytically.
+
+# Glossary
+
+## Predator-Prey Dynamics
+
+**Lotka-Volterra predator-prey model**
+: A system of two coupled differential equations describing predator and prey population dynamics. Predators grow by consuming prey; prey decline through predation. The basic model produces neutrally stable oscillations.
+
+**Attack rate ($a$)**
+: The rate at which predators encounter and successfully capture prey. Higher attack rates increase predation pressure and can destabilize dynamics.
+
+**Conversion efficiency ($e$)**
+: The fraction of consumed prey biomass converted into predator reproduction. Ranges from 0 to 1; higher values mean more efficient predators.
+
+**Handling time ($h$)**
+: Time a predator spends subduing, consuming, and digesting each prey item. Limits maximum consumption rate to $1/h$ prey per predator per time.
+
+**Functional response**
+: The relationship between prey density and per-predator consumption rate. Describes how predation rate changes with prey availability.
+
+**Type I functional response**
+: Linear functional response where consumption increases proportionally with prey density without limit. Unrealistic at high prey densities.
+
+**Type II functional response**
+: Saturating functional response where consumption levels off at high prey density due to handling time. Most common in nature.
+
+**Type III functional response**
+: Sigmoidal functional response with low predation at low prey density (prey switching, search image formation) and saturation at high density.
+
+## Disease Dynamics
+
+**Compartmental model**
+: A modeling framework that divides a population into discrete categories (compartments) based on disease status, tracking flows between compartments.
+
+**SIR model**
+: A compartmental model with Susceptible, Infected, and Recovered compartments. Assumes permanent immunity after recovery.
+
+**Susceptible ($S$)**
+: Individuals who can become infected upon contact with infectious individuals.
+
+**Infected ($I$)**
+: Individuals who carry the pathogen and can transmit it to susceptible individuals.
+
+**Recovered ($R$)**
+: Individuals who have cleared the infection and are immune to reinfection.
+
+**Transmission rate ($\beta$)**
+: The rate at which susceptible individuals become infected per contact with infected individuals. Higher $\beta$ means faster disease spread.
+
+**Recovery rate ($\gamma$)**
+: The rate at which infected individuals recover and become immune. The inverse ($1/\gamma$) is the average infectious period.
+
+**Basic reproduction number ($R_0$)**
+: The expected number of new infections caused by one infected individual in a fully susceptible population. If $R_0 > 1$, an epidemic can occur; if $R_0 < 1$, the disease dies out.
+
+**Closed population**
+: A population with no births, deaths, immigration, or emigration. Total population size remains constant.
+
+**Epidemic curve**
+: The time series of new infections or total infected individuals during a disease outbreak. Typically shows exponential growth, peak, and decline.
+
+## Annual Plant Model
+
+**Germination rate ($g$)**
+: The proportion of seeds that germinate in a given year. Remaining seeds may persist in the seed bank.
+
+**Seed survival ($s$)**
+: The proportion of non-germinated seeds that survive in the soil to the next year.
+
+**Intrinsic growth rate ($\lambda$)**
+: The number of seeds a plant would produce in the absence of competition. Maximum potential fecundity.
+
+**Intraspecific competition ($\alpha_{ii}$)**
+: The per capita effect of conspecifics on a focal individual's fecundity. Causes density-dependent reduction in seed production.
+
+**Interspecific competition ($\alpha_{ij}$)**
+: The per capita effect of species $j$ on species $i$'s fecundity. Determines competitive interactions between species.
+
+**Seed bank**
+: The reservoir of dormant seeds in the soil. Provides temporal storage, buffering populations against bad years.
+
+**Burn-in period**
+: Initial simulation time steps discarded when estimating equilibrium properties. Allows the system to reach stable dynamics before measurement.
+
+## General Concepts
+
+**Coupled differential equations**
+: A system of differential equations where the rate of change of each variable depends on other variables in the system. Predator-prey and SIR models are examples.
+
+**Neutral stability**
+: A dynamical behavior where the system oscillates indefinitely at constant amplitude. Small perturbations shift the system to a new orbit rather than returning to the original.
+
+**Stable equilibrium**
+: A state where perturbations decay and the system returns to equilibrium. Achieved in predator-prey models with prey carrying capacity.
+
+**Mass action**
+: The assumption that interaction rate is proportional to the product of population densities. Used in both predator-prey ($aPH$) and disease ($\beta SI$) models.
+
+**Demographic stochasticity**
+: Randomness in population dynamics arising from the probabilistic nature of individual birth, death, and reproduction events. More important in small populations.

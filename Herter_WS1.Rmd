@@ -1,0 +1,894 @@
+---
+title: "WS1: Introduction to R"
+output:
+  html_document:
+    theme: "flatly"
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+__Acknowledgement__: _Jeremy Collings, a former UO graduate student, developed the first draft of these markdown files._
+
+
+<font color="#E0AC00">__Vocabulary terms__</font> appear in bold yellow. <font color="#8B16B6">__Graded exercises__</font> appear in purple boxes. <font color="#5DBA49">__Clarifications about learning objectives__</font> appear in bold green.
+
+# Introduction
+
+This handout introduces R, RStudio, and RMarkdown, building intuition for how coding supports population ecology.
+
+<font color="#5DBA49"> 
+__Learning Objectives (skills used throughout the course):__
+
+* __Setting up RStudio Projects__
+* __Using R Markdown to combine code and text__
+* __Troubleshooting code errors__
+* __Performing mathematical operations__
+* __Storing data in objects (vectors, data frames)__
+* __Indexing and filtering data__
+* __Using and writing functions__
+* __Installing and loading packages (Base R vs. Tidyverse)__
+* __Writing for and while loops__
+* __Reading data from files__
+* __Visualizing data with plots__
+</font>
+
+## RStudio Projects
+
+<font color="#E0AC00">__RStudio Projects__</font> organize your work by keeping workspaces, histories, and working directories separate across projects. We recommend creating an R Project for this class. Use [this guide](https://support.posit.co/hc/en-us/articles/200526207-Using-RStudio-Projects) to set one up.
+
+## R Markdown
+
+<font color="#E0AC00">__Markdown__</font> files combine text and code for literate programming, communicating not just the code but also the process and interpretation. Reading explanations alongside code and figures is far more useful than reading raw code alone.
+
+R code goes inside <font color="#E0AC00">__chunks__</font>, initiated with three backticks followed by `{r chunk_title}` and closed with three more backticks. You can insert chunks using the green "Insert" button (box with 'c' and plus sign).
+
+While completing worksheets, edit the .Rmd file but read the .html file for easier viewing. Converting .Rmd to HTML is called <font color="#E0AC00">__knitting__</font> (use the "Knit" button). Flip between both files to understand how markdown works.
+
+For each worksheet, download the .Rmd and .html files, save a copy of the .Rmd with your initials appended, and complete the exercises. Submit both your final .Rmd and knitted .html files on Canvas, ensuring all answers display correctly.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 1</font>
+
+__In the .Rmd file, identify where you see:__
+
+- __Text bookmarked with two underscores__
+
+__What does this formatting do?__ 
+- Makes text in bold. 
+
+</div>
+<br>
+
+## Troubleshooting
+
+The most important coding skill is troubleshooting. Regardless of experience, you will encounter error messages. Fortunately, copying an error message into a search engine or searching "[topic] in R" almost always yields helpful forums and blog posts. Large language models like ChatGPT have also transformed how many people debug code (see [this guide](https://www.zdnet.com/article/how-to-use-chatgpt-to-write-code-what-it-does-well-and-what-it-doesnt/) for tips). We encourage using the internet and LLMs for this class.
+
+We also encourage you to ask peers, Rachel, or Jeff for help. When asking for help, please:
+
+- Clearly state your goal (both the larger objective and current step)
+- Describe what you tried and how the output differs from what you expected
+- Provide your code (as an R Script or RMarkdown file for email requests)
+
+__Important:__ To receive help, you must understand what you're trying to do. Many coding problems resolve once you clarify the underlying concept. If you don't understand what you're trying to code, address that first using textbooks, the internet, peers, or office hours.
+
+## Mathematical Operations
+
+R works as a calculator:
+
+```{r math 1}
+2+2
+```
+
+More complex expressions work too:
+
+```{r math 2}
+(2+(1/3))*4^2
+```
+
+Many operations require built-in functions:
+
+- Square root: `sqrt(x)`
+- Logarithm: `log(x, base)`
+- Exponential: `exp(x)`
+
+```{r math 3}
+sqrt(36)      # square root of 36
+log(100, 10)  # log base 10 of 100
+log(100)      # natural log (default base is e)
+exp(2)        # e^2
+```
+
+Text after `#` is a <font color="#E0AC00">__comment__</font>—ignored by R but essential for readability. Comment your code so others (including future you) can understand it.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 2</font>
+
+__Write code to calculate $\log_6 36$.__
+```{r}
+log(36, base = 6)
+```
+</div>
+<br>
+
+## Data Structures: Objects, Vectors, and Data Frames
+
+Data is stored in <font color="#E0AC00">__objects__</font> using <font color="#E0AC00">__assignment operators__</font> `<-` or `=`:
+
+```{r storing 1}
+dat.pt1 <- 5
+dat.pt1
+```
+
+A <font color="#E0AC00">__vector__</font> stores multiple values using `c()` (concatenate):
+
+```{r storing 2}
+var1 <- c(5, 4, 6, 3, 5, 5)
+var2 <- c(8, 9, 9, 9, 8, 7)
+var3 <- c("red", "red", "red", "blue", "blue", "blue")
+var1
+```
+
+Note that `var1` and `var2` are numeric vectors while `var3` is a character vector.
+
+Combine vectors into a <font color="#E0AC00">__data frame__</font> using `cbind.data.frame()` (columns) or `rbind.data.frame()` (rows):
+
+```{r storing 3}
+dat <- cbind.data.frame(var1, var2, var3)
+dat
+```
+
+### Indexing
+
+Use square brackets to <font color="#E0AC00">__index__</font> elements:
+
+```{r index1}
+var1[3]  # third element
+```
+
+For data frames, specify `[row, column]`:
+
+```{r index2}
+dat[,3]  # all rows, third column
+```
+
+Named elements can use `$`:
+
+```{r index3}
+dat$var3
+```
+
+Multiple indices work too:
+
+```{r}
+var2[c(2, 4)]  # 2nd and 4th elements
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 3</font>
+
+__Write code to return the 2nd and 4th values of var2.__
+</div>
+<br>
+```{r}
+var2[c(2, 4)]
+
+```
+
+### Boolean Indexing
+
+<font color="#E0AC00">__Boolean__</font> (TRUE/FALSE) values can index objects:
+
+```{r index4}
+var1[c(TRUE, TRUE, TRUE, FALSE, FALSE, FALSE)]
+```
+
+<font color="#E0AC00">__Logical statements__</font> generate booleans:
+
+```{r index5}
+var1[var3 == "red"]
+```
+
+Key logical operators:
+
+- `==` (equals), `!=` (not equals)
+- `<`, `>`, `<=`, `>=`
+- `%in%` (is within)
+- `&` (and), `|` (or)
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 4</font>
+
+__Create a data frame with three columns: your top 5 favorite organisms, their kingdoms, and cuteness ratings (1-5 scale). Then write code to return species scoring below 3 on cuteness.__
+</div>
+<br>
+```{r}
+favorite <- c("Bunnies", "Capybara", "dandelion", "seagull", "chicken") #declare functions
+
+kingdom <- c("Animalia", "Animalia", "Plantae", "Animalia", "Animalia") #sort in biological kingdoms
+
+cuteness <- c(4, 5, 2, 1, 3) #cutness level
+
+cbind(favorite, kingdom, cuteness) #combine 3 variables in a matrix
+fav <- data.frame(favorite, kingdom, cuteness) #creat and put in df
+fav[fav$cuteness < 3,] #selecting and print rows that have a score of less than 3
+
+```
+
+## Functions
+
+### Using Functions
+
+<font color="#E0AC00">__Functions__</font> perform tasks and take arguments in parentheses. Instead of:
+
+```{r functions1}
+var1 <- c(5, 4, 6, 3, 5, 5)
+
+```
+
+Use `sum()`:
+
+```{r functions 2}
+sum(var1)
+```
+
+Or from a data frame:
+
+```{r functions 3}
+sum(dat$var1)
+```
+
+Get help on any function by typing `?function_name` in the console. 
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 5</font>
+
+__Find the average of var1 where var3 equals "red".__
+```{r}
+dat <- data.frame(
+  var1 = c(5, 4, 6, 3, 5, 5),
+  var3 = c("red", "blue", "red", "green", "red", "blue") #data provided in earlier questions
+)
+mean(dat$var1[dat$var3 == "red"]) 
+```
+
+</div>
+<br>
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 6</font>
+
+__Besides the vector, what additional argument does `sum()` accept? What is its purpose? (Use `?sum` to check.)__ 
+
+- sum returns the sum of all the values present in its arguments
+
+</div>
+<br>
+
+### Writing Functions
+
+When you need to repeat a procedure, write a function. Start by coding the procedure, identify flexible inputs, then wrap it:
+
+```
+name_of_function <- function(inputs){
+  # code here
+}
+```
+
+Example—reporting flower observations:
+
+```{r}
+flower_function <- function(flower_list, genus){
+  n_spp <- length(unique(flower_list))
+  prop_genus <- (sum(grepl(genus, flower_list)) / length(flower_list)) * 100
+  print(paste("Wow! You saw", n_spp, "species, and", round(prop_genus, 2), 
+              "percent were", genus, "! Neat.", sep = " "))
+}
+
+fwrs <- c("Lupinus rivularis", "Geranium robertianum", "Bellis perennis", 
+          "Eschscholzia californica", "Lupinus bicolor", "Gaultheria shallon",
+          "Bellis perennis", "Dicentra formosa", "Cornus sericea", "Geranium robertianum")
+
+flower_function(fwrs, "Lupinus")
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 7</font>
+
+__Write a function that takes your Exercise 4 data frame and a cuteness threshold $x$, returning species scoring $x$ or higher. Use it to find species scoring at least 2.5.__
+```{r}
+# Define the function
+cute_species <- function(df, threshold) 
+  {
+  df[[1]][df[[3]] >= threshold]
+  }
+
+cute_species(fav, 2.5)
+```
+</div>
+<br>
+
+## Packages: Base R vs. Tidyverse
+
+### Installing Packages
+
+Many useful functions live in <font color="#E0AC00">__packages__</font> beyond base R. Install packages once:
+
+`install.packages("tidyverse")`
+
+Load them each session:
+
+```{r packages 1, warning = FALSE, message = FALSE}
+library(tidyverse)
+```
+
+### Base R vs. Tidyverse
+
+<font color="#E0AC00">__Tidyverse__</font> is both a package collection and a coding dialect. Here's a comparison using fake flour beetle fecundity data.
+
+Base R approach:
+
+```{r base r example}
+N_sp <- 2
+N_temp <- 3
+N_rep <- 5
+
+tribolium_dat <- cbind.data.frame(
+  sp = rep(c("confusum", "castaneum"), each = N_temp * N_rep),
+  temp = rep(rep(c(18, 20, 22), N_rep), N_sp)
+)
+
+tribolium_dat$fecundity[tribolium_dat$sp == "confusum"] <- 
+  rpois(N_temp * N_rep, tribolium_dat$temp[tribolium_dat$sp == "confusum"] * 15)
+tribolium_dat$fecundity[tribolium_dat$sp == "castaneum"] <- 
+  rpois(N_temp * N_rep, tribolium_dat$temp[tribolium_dat$sp == "castaneum"] * 18)
+
+head(tribolium_dat)
+```
+
+Tidyverse approach using the <font color="#E0AC00">__pipe__</font> (`%>%`), which reads as "and then":
+
+```{r tidyverse example}
+tribolium_dat <- cbind.data.frame(
+  sp = rep(c("confusum", "castaneum"), each = N_temp * N_rep),
+  temp = rep(rep(c(18, 20, 22), N_rep), N_sp)
+) %>%
+  mutate(fecundity = case_when(
+    sp == "confusum" ~ rpois(n(), temp * 15),
+    sp == "castaneum" ~ rpois(n(), temp * 18)
+  ))
+
+head(tribolium_dat)
+```
+
+Calculating summaries—Base R:
+
+```{r base r example 2}
+tribolium_dat$temp <- tribolium_dat$temp + 273.15
+tapply(tribolium_dat$fecundity, list(tribolium_dat$sp, tribolium_dat$temp), mean)
+tapply(tribolium_dat$fecundity, list(tribolium_dat$sp, tribolium_dat$temp), sd)
+```
+
+Tidyverse:
+
+```{r tidyverse example 2}
+tribolium_dat %>%
+  mutate(temp = temp + 273.15) %>%
+  group_by(sp, temp) %>%
+  summarise(mean.fec = mean(fecundity), sd.fec = sd(fecundity))
+```
+
+Base R works step-by-step; tidyverse chains operations with pipes. You may use either or mix both.
+
+## Loops
+
+Loops repeat code multiple times—essential for simulations, iterating over data, and automating repetitive tasks.
+
+### For Loops
+
+<font color="#E0AC00">__For loops__</font> iterate a fixed number of times:
+
+```
+for(index in sequence){
+  # code to repeat
+}
+```
+
+Simple example:
+
+```{r for1}
+for(i in 1:5){
+  print(i^2)
+}
+```
+
+The index `i` takes each value in the sequence (1, 2, 3, 4, 5), executing the code block each time.
+
+Practical example—simulating population growth over 10 years:
+
+```{r for2}
+N <- numeric(11)  # pre-allocate vector (years 0-10)
+N[1] <- 100       # initial population
+lambda <- 1.05    # growth rate
+
+for(t in 1:10){
+  N[t + 1] <- N[t] * lambda
+}
+
+N
+```
+
+You can iterate over any vector:
+
+```{r for3}
+species <- c("deer", "elk", "moose")
+
+for(sp in species){
+  print(paste("Processing:", sp))
+}
+```
+
+Nested loops iterate over multiple dimensions:
+
+```{r for4}
+temps <- c(18, 20, 22)
+reps <- 1:3
+
+for(temp in temps){
+  for(rep in reps){
+    print(paste("Temp:", temp, "Rep:", rep))
+  }
+}
+```
+
+__Performance tip:__ Pre-allocate output vectors/matrices before loops. Growing objects inside loops is slow:
+
+```{r for5}
+# Good: pre-allocate
+results <- numeric(100)
+for(i in 1:100){
+  results[i] <- sqrt(i)
+}
+
+
+# Bad: growing vector (avoid this)
+# results <- c()
+# for(i in 1:100){
+#   results <- c(results, sqrt(i))
+# }
+
+```
+
+### While Loops
+
+<font color="#E0AC00">__While loops__</font> repeat until a condition becomes FALSE:
+
+```
+while(condition){
+  # code to repeat
+}
+```
+
+Example—population growth until carrying capacity:
+
+```{r while1}
+N <- 100
+K <- 500
+lambda <- 1.1
+year <- 0
+
+while(N < K){
+  N <- N * lambda
+  year <- year + 1
+}
+
+cat("Reached carrying capacity in year", year, "with N =", round(N))
+```
+
+__Warning:__ While loops can run forever if the condition never becomes FALSE. Include safeguards:
+
+```{r while2}
+N <- 100
+max_iter <- 1000
+iter <- 0
+
+while(N < 500 & iter < max_iter){
+  N <- N * 1.01
+  iter <- iter + 1
+}
+
+if(iter == max_iter){
+  print("Warning: maximum iterations reached")
+} else {
+  print(paste("Converged in", iter, "iterations"))
+}
+```
+
+### Loop Control: break and next
+
+Use `break` to exit a loop early:
+
+```{r break1}
+for(i in 1:10){
+  if(i == 5) break
+  print(i)
+}
+```
+
+Use `next` to skip to the next iteration:
+
+```{r next1}
+for(i in 1:5){
+  if(i == 3) next
+  print(i)
+}
+```
+
+### When to Use Loops vs. Vectorized Operations
+
+R's vectorized functions are often faster and cleaner than loops:
+
+```{r vectorized}
+# Vectorized (preferred for simple operations)
+x <- 1:1000
+y <- sqrt(x)
+
+# Equivalent loop (slower)
+y_loop <- numeric(1000)
+for(i in 1:1000){
+  y_loop[i] <- sqrt(i)
+}
+```
+
+Use loops when each iteration depends on previous results (like population models) or when operations are complex. Use vectorized functions for element-wise operations on vectors.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 8</font>
+
+__Write a for loop that calculates the factorial of 7 (i.e., 7! = 7 × 6 × 5 × 4 × 3 × 2 × 1). Start with a variable set to 1 and multiply it by each integer from 1 to 7.__
+```{r}
+fact <- 1 #initialize
+
+# Loop through 1 to 7
+for(i in 1:7){ 
+  fact <- fact * i
+}
+
+fact #prints output of the factorail
+
+```
+
+</div>
+<br>
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 9</font>
+
+__A population starts at N = 50 and grows by 15% each year. Using a while loop, determine how many years until the population exceeds 200.__
+```{r}
+
+N <- 50    #population starting      
+years <- 0    #year counter  
+
+# Loop until N exceeds 200
+while(N <= 200){
+  N <- N * 1.15  # grow by 15%
+  years <- years + 1
+}
+
+years # the total years needed
+N #population after the loop
+
+```
+
+</div>
+<br>
+
+## Reading Data from Files
+
+Most class data will be simulated, but real data comes from files. Use `read.csv()`:
+
+
+```{r reading_1}
+dat <- read.csv("nutrient_data.csv") ## Load CSV file
+
+head(dat) #print output
+```
+
+
+The <font color="#E0AC00">__working directory__</font> is where R looks for files by default. RStudio Projects set this automatically. Check with `getwd()`.
+
+## Data Visualization
+
+### Scatter Plots in Base R
+
+```{r plotting 1}
+dat <- read.csv("nutrient_data.csv")
+plot(x = dat$stem.height, y = dat$fruit.number)
+
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 10</font>
+
+__A) Identify 5+ arguments that adjust plot aesthetics (see `?plot` and `?par`).__
+- par is a function that sets or queries graphical parameters. These parameters control how plots look, such as colors, point size, margins, labels, and more.
+- plot used to create graphs, usually scatter plots, line plots, or other types of charts.
+-arguements:
+  - col: default color for points and     lines
+  - mar: plot margins
+  - xlab: x axis labels
+  - ylab: y axis label
+  - main: title of plot
+  
+__B) Create a plot using these modifications.__
+
+```{r plotting 2}
+
+par(pin = c(4, 2))  # Make plot wider
+
+
+plot(x = dat$stem.height, 
+     y = dat$fruit.number,
+     col = "blue",  #plotted points are blue       
+     main = "Stem Height vs Fruit Number", #title of chart
+     xlab = "Stem Height",  #axis labels
+     ylab = "Fruit Number") 
+```
+
+### Scatter Plots in ggplot
+
+```{r plotting 3}
+ggplot(data = dat, aes(x = stem.height, y = fruit.number)) + geom_point()
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 11</font
+
+
+__Recreate both plots with axis labels "Stem Height" and "Number of Fruits per Plant".__
+
+```{r plotting 4}
+ggplot(data = dat, aes(x = stem.height, y = fruit.number)) + 
+  geom_point() +
+  labs(x = "Stem Height",          #added cleaned up x and y labels
+       y = "Number of Fruits per Plant")
+```
+
+</div>
+<br>
+
+## Practice: Data Wrangling
+
+These exercises combine the skills above to manipulate and analyze data—a process called <font color="#E0AC00">__data wrangling__</font>.
+
+__Remember: the first step to coding is figuring out what you are trying to do with your code. A good way to begin any coding task is to write down in plain language (and include as an annotation in your script) the steps that you need to complete; then try to write the code for each step one at a time.__
+
+The data frame contains fruit counts, but we want total seed output. A separate study found average seeds per fruit: 3.4 (low nutrients), 4.2 (medium), and 5.0 (high).
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 12</font>
+
+__Create a new variable for approximate seed output using these averages. Consider using `ifelse()` or `case_when()`.__
+```{r}
+#is nutrient low multiply by 3.4, high = 5, medium = 4.2
+dat$seed.output <- ifelse(dat$nutrient == "low", dat$fruit.number * 3.4,
+                   ifelse(dat$nutrient == "medium", dat$fruit.number * 4.2,
+                          dat$fruit.number * 5.0))
+head(dat) #print output
+```
+
+</div>
+<br>
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 13</font>
+
+__Calculate average seed output for each nutrient treatment.__
+```{r}
+
+# Calculate mean seed output for each nutrient
+low_avg <- mean(dat$seed.output[dat$nutrient == "low"])
+medium_avg <- mean(dat$seed.output[dat$nutrient == "medium"])
+high_avg <- mean(dat$seed.output[dat$nutrient == "high"])
+
+# Combine into a vector 
+summary <- c(low = low_avg, medium = medium_avg, high = high_avg)
+summary
+
+```
+
+</div>
+<br>
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 14</font>
+
+__Make a bar plot of seed output by nutrient treatment.__
+</div>
+<br>
+```{r}
+
+barplot(summary,
+        main = "Average Seed Output by Nutrient", #title
+        xlab = "Nutrient Treatment",             #axis labels
+        ylab = "Average Seed Output",
+        col = c("lightgreen", "orange", "red")) #color or bar plots
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 15</font>
+
+__Make a scatter plot comparing seed output and stem height.__
+```{r}
+plot(dat$stem.height, dat$seed.output,       # x = stem height, y = seed output
+     main = "Seed Output vs Stem Height",    # title
+     xlab = "Stem Height",                   # x-axis label
+     ylab = "Seed Output",                   # y-axis label
+     col = "blue")                           # point color
+
+```
+
+</div>
+<br>
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 16</font>
+
+__Make a scatter plot of seed output vs. stem height with best-fit lines for each nutrient treatment, colored by treatment.__
+</div>
+<br>
+```{r}
+colors <- c("low" = "green", "medium" = "orange", "high" = "red")
+
+# Plot details (visual)
+plot(dat$stem.height, dat$seed.output,
+     main = "Seed Output vs Stem Height by Nutrient",
+     xlab = "Stem Height",
+     ylab = "Seed Output",
+     type = "n")
+
+#FOR loop for plotting points and lines
+for(n in names(colors)){
+  subset_data <- dat[dat$nutrient == n, ]
+  
+  # Add points
+  points(subset_data$stem.height, subset_data$seed.output,
+         col = colors[n], pch = 16)
+  
+  # Fit linear model
+  model <- lm(seed.output ~ stem.height, data = subset_data)
+  lines(subset_data$stem.height, predict(model), col = colors[n], lwd = 2)
+}
+
+```
+
+## Additional Resources
+
+- [R Markdown guide](https://r4ds.had.co.nz/r-markdown.html)
+- [Software Carpentry R lessons](http://swcarpentry.github.io/r-novice-inflammation/)
+- [R for Data Science](https://r4ds.had.co.nz/introduction.html)
+- [R Markdown cheat sheet](https://www.rstudio.com/wp-content/uploads/2015/02/rmarkdown-cheatsheet.pdf)
+- [ggplot cheat sheet](https://www.maths.usyd.edu.au/u/UG/SM/STAT3022/r/current/Misc/data-visualization-2.1.pdf)
+- [Base R plotting](https://towardsdatascience.com/base-plotting-in-r-eb365da06b22)
+
+
+# Glossary
+
+## R Environment
+
+**RStudio Projects**
+: A feature in RStudio that organizes files, workspaces, and settings for a specific project. Automatically sets the working directory to the project folder, making file paths simpler and more portable. Recommended for managing coursework.
+
+**Working directory**
+: The default folder where R looks for files and saves output. When using an RStudio Project, automatically set to the project folder. Check with `getwd()`; change with `setwd()` (though rarely needed with Projects).
+
+**Packages**
+: Collections of functions, data, and documentation that extend R's capabilities. Base R includes core packages; additional packages (like tidyverse) must be installed once with `install.packages()` and loaded each session with `library()`.
+
+**Tidyverse**
+: A collection of R packages designed for data science, sharing a common philosophy and syntax. Includes ggplot2 (plotting), dplyr (data manipulation), and tidyr (data reshaping). Offers an alternative "dialect" to base R with emphasis on readable, chainable code.
+
+## R Markdown
+
+**Markdown**
+: A lightweight text formatting syntax that combines plain text with simple formatting codes. R Markdown extends this to include executable R code, enabling "literate programming" where explanation and analysis are interwoven.
+
+**Chunk**
+: A block of R code within an R Markdown document, delimited by triple backticks and `{r}`. Code in chunks is executed when the document is knitted, and output (including figures) appears in the final document.
+
+**Knitting**
+: The process of converting an R Markdown (.Rmd) file into an output format like HTML, PDF, or Word. Executes all code chunks, combines results with text, and applies formatting. Use the "Knit" button in RStudio.
+
+## Data Types and Structures
+
+**Object**
+: A named container that stores data in R. Everything in R is an object—numbers, text, datasets, functions, and model results. Created using assignment operators and accessed by name.
+
+**Vector**
+: A one-dimensional sequence of values of the same type (all numeric, all character, etc.). The fundamental data structure in R. Created with `c()` (concatenate). Examples: `c(1, 2, 3)`, `c("red", "blue")`.
+
+**Data frame**
+: A two-dimensional data structure where columns can contain different types (numeric, character, etc.) but each column must be internally consistent. The standard structure for datasets in R. Rows typically represent observations; columns represent variables.
+
+**Boolean**
+: A logical value that is either `TRUE` or `FALSE`. Used for conditional testing and filtering data. Result from logical comparisons like `x > 5` or `name == "oak"`.
+
+## Operators
+
+**Assignment operators (`<-` and `=`)**
+: Symbols used to store values in objects. `x <- 5` stores the value 5 in an object named x. Both `<-` and `=` work for assignment, though `<-` is traditional in R.
+
+**Logical operators**
+: Symbols for comparing values and combining conditions. Include `==` (equals), `!=` (not equals), `<`, `>`, `<=`, `>=`, `%in%` (is element of), `&` (and), `|` (or). Return Boolean values.
+
+**Pipe (`%>%`)**
+: An operator from the tidyverse that passes output from one function as input to the next. Read as "and then." Enables chaining operations: `data %>% filter() %>% summarize()` means "take data, then filter, then summarize."
+
+## Indexing
+
+**Index**
+: A number or name specifying the position of an element within an object. R uses 1-based indexing (first element is position 1, not 0). Used with square brackets to extract or modify elements.
+
+**Square bracket notation (`[ ]`)**
+: The primary method for accessing elements of R objects. For vectors: `x[3]` gets the third element. For data frames: `df[row, column]` where either can be left blank to select all. Can use numbers, names, or Boolean vectors.
+
+**Dollar sign notation (`$`)**
+: A method for accessing named elements, particularly columns in data frames. `df$column_name` extracts the column as a vector. Only works with named elements.
+
+**Logical statement**
+: An expression that evaluates to TRUE or FALSE. Used for conditional indexing: `x[x > 5]` returns elements of x greater than 5. The statement `x > 5` generates a Boolean vector used as the index.
+
+## Functions
+
+**Function**
+: A reusable block of code that performs a specific task. Takes inputs (arguments), processes them, and returns output. Called by name followed by parentheses: `mean(x)`. R has thousands of built-in functions; users can write custom functions.
+
+**Argument**
+: An input passed to a function that controls its behavior. Can be required or optional (with defaults). Specified by position or name: `log(100, base = 10)`. View a function's arguments with `?function_name`.
+
+**Comment**
+: Text in code preceded by `#` that R ignores during execution. Used to explain code, document reasoning, or temporarily disable code. Essential for readable, maintainable code.
+
+## Loops
+
+**Loop**
+: A programming structure that repeats code multiple times. Useful for iterating over data, running simulations, or any repetitive task. Two main types in R: for loops and while loops.
+
+**For loop**
+: A loop that iterates a fixed number of times over a sequence. Syntax: `for(i in sequence){ code }`. The index variable (often `i`) takes each value in the sequence successively. Use when the number of iterations is known in advance.
+
+**While loop**
+: A loop that repeats as long as a condition remains TRUE. Syntax: `while(condition){ code }`. Use when the number of iterations depends on some criterion being met. Requires safeguards against infinite loops.
+
+**Pre-allocation**
+: Creating an empty vector or matrix of the correct size before a loop fills it with values. Much faster than growing objects incrementally. Example: `results <- numeric(100)` before a loop that fills 100 values.
+
+## Data Operations
+
+**Concatenate**
+: To join elements together into a sequence. The `c()` function concatenates values into a vector: `c(1, 2, 3)` creates a three-element vector. Can also combine existing vectors.
+
+**Data wrangling**
+: The process of cleaning, transforming, and reshaping data for analysis. Includes filtering rows, selecting columns, creating new variables, handling missing values, and merging datasets.

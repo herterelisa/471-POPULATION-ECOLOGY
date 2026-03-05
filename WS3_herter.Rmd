@@ -1,0 +1,885 @@
+---
+title: "WS3: Stochastic Population Models"
+output:
+  html_document:
+    theme: "flatly"
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(123)
+library(tidyverse)
+library(patchwork)
+```
+
+<font color="#E0AC00">__Vocabulary terms__</font> appear in bold yellow. <font color="#8B16B6">__Graded exercises__</font> appear in purple boxes.
+
+# Introduction
+
+So far, we've worked exclusively with <font color="#E0AC00">__deterministic__</font> models—given the same parameters and initial values, repeated simulations always produce identical results. Real populations, however, experience randomness from many sources: environmental fluctuations, demographic chance, genetic drift, and measurement error.
+
+Today we introduce <font color="#E0AC00">__stochasticity__</font> (randomness) to population models. We'll build complexity step-by-step:
+
+1. **Simple stochastic logistic growth** - adding random noise to a familiar model
+2. **Temperature-dependent growth** - making parameters respond to environmental variables
+3. **Exploring niche width** - how thermal tolerance affects extinction risk
+4. **Joint effects** - combining environmental variability and physiological limits
+
+**Goals:**
+
+- Add stochasticity to deterministic population models
+- Understand environmental vs. demographic stochasticity
+- Simulate populations under changing environmental conditions
+- Explore extinction risk using Monte Carlo methods
+- Visualize complex parameter interactions
+
+# Review: Probability Distributions
+
+Before adding stochasticity to population models, let's review key probability distributions.
+
+## Why Probability Distributions?
+
+Before building stochastic models, we need to understand <font color="#E0AC00">__probability distributions__</font>—the mathematical tools for describing randomness. In our models, probability distributions serve two key roles: (1) they generate random environmental fluctuations (e.g., drawing yearly temperatures from a normal distribution), and (2) they describe the variability in outcomes across many simulations (e.g., the distribution of extinction times). Just as deterministic models require algebra, stochastic models require probability. The normal distribution is particularly important because many environmental variables (temperature, rainfall, resource availability) fluctuate approximately normally around long-term means.
+
+## The Normal Distribution
+
+The <font color="#E0AC00">__normal (Gaussian) distribution__</font> is continuous, ranging from $-\infty$ to $\infty$, defined by mean ($\mu$) and standard deviation ($\sigma$). It's foundational for modeling environmental variation.
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Normal Distribution Parameters:**
+
+| Parameter | Symbol | Description |
+|-----------|--------|-------------|
+| Mean | $\mu$ | Center of the distribution |
+| Standard deviation | $\sigma$ | Spread of the distribution |
+| Random variable | $X$ | Any real number ($-\infty$ to $\infty$) |
+
+**Key properties:** 
+- ~68% of values within 1 SD of mean
+- ~95% within 2 SDs
+- ~99.7% within 3 SDs
+
+</div>
+<br>
+
+```{r}
+# Visualize different normal distributions
+ggplot() +
+  stat_function(fun = function(x) dnorm(x, mean = 0, sd = 1),
+                aes(color = "μ=0, σ=1"), linewidth = 1.5) +
+  stat_function(fun = function(x) dnorm(x, mean = 2.5, sd = 1),
+                aes(color = "μ=2.5, σ=1"), linewidth = 1.5) +
+  stat_function(fun = function(x) dnorm(x, mean = 0, sd = 2.5),
+                aes(color = "μ=0, σ=2.5"), linewidth = 1.5) +
+  xlim(-8, 8) + 
+  theme_minimal(base_size = 15) +
+  # theme_classic(base_size = 15) +
+  labs(x="Value", y = "Probability Density", color = "Parameters")
+  # xlab("Value") + ylab("Probability Density") +
+  # labs(color = "Parameters")
+```
+
+Drawing random values from a normal distribution:
+
+```{r}
+# Draw 10 random values from N(0, 1)
+rnorm(10, mean = 0, sd = 1)
+
+# Simulate and visualize 10,000 draws
+data.frame(x = rnorm(10000, mean = 0, sd = 1)) %>%
+  ggplot(aes(x = x)) +
+  geom_histogram(bins = 50, fill = "steelblue", alpha = 0.7) +
+  theme_classic(base_size = 15) +
+  xlab("Value") + ylab("Frequency")
+```
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #FFE285; border-radius: 5px;">
+**On random number generation:** Functions like `rnorm()` are pseudo-random—they use a seed value to generate a reproducible sequence. Setting `set.seed()` ensures your "random" simulations are reproducible, essential for debugging and sharing results.
+</div>
+<br>
+
+
+### Understanding dnorm, pnorm, qnorm, and rnorm
+
+R provides four related functions for working with the normal distribution, each serving a different purpose:
+```{r}
+# Example using standard normal: N(0, 1)
+
+# dnorm: probability DENSITY function (PDF) - height of the curve
+dnorm(0, mean = 0, sd = 1)      # Density at x = 0
+dnorm(1.96, mean = 0, sd = 1)   # Density at x = 1.96
+
+# pnorm: cumulative distribution function (CDF) - area under curve to the left
+pnorm(0, mean = 0, sd = 1)      # P(X ≤ 0) = 0.5
+pnorm(1.96, mean = 0, sd = 1)   # P(X ≤ 1.96) ≈ 0.975
+
+# qnorm: quantile function (inverse of CDF) - what x gives this probability?
+qnorm(0.5, mean = 0, sd = 1)    # What x has 50% below it? Answer: 0
+qnorm(0.975, mean = 0, sd = 1)  # What x has 97.5% below it? Answer: 1.96
+
+# rnorm: random number generator - draw random values
+rnorm(5, mean = 0, sd = 1)      # Generate 5 random values
+```
+
+**Visualizing PDF vs. CDF:**
+```{r, fig.height=4, fig.width=10}
+# Create data for plotting
+x_vals <- seq(-4, 4, by = 0.01)
+pdf_data <- data.frame(x = x_vals, y = dnorm(x_vals, 0, 1))
+cdf_data <- data.frame(x = x_vals, y = pnorm(x_vals, 0, 1))
+
+# PDF plot
+p_pdf <- ggplot(pdf_data, aes(x = x, y = y)) +
+  geom_line(color = "steelblue", linewidth = 1.5) +
+  # Highlight example: show density at x = 1
+  geom_segment(x = 1, xend = 1, y = 0, yend = dnorm(1),
+               color = "coral", linetype = "dashed", linewidth = 1) +
+  geom_point(x = 1, y = dnorm(1), color = "coral", size = 3) +
+  annotate("text", x = 1, y = dnorm(1), 
+           label = paste0("dnorm(1) = ", round(dnorm(1), 3)),
+           color = "coral", size = 4, hjust = -0.2, vjust = 0) +
+  theme_classic(base_size = 14) +
+  xlab("x") + ylab("Density") +
+  labs(title = "Probability Density Function (dnorm)",
+       subtitle = "Shows the HEIGHT of the distribution at each x")
+# CDF plot
+p_cdf <- ggplot(cdf_data, aes(x = x, y = y)) +
+  geom_line(color = "darkgreen", linewidth = 1.5) +
+  geom_hline(yintercept = 0.5, linetype = "dotted", alpha = 0.5) +
+  geom_vline(xintercept = 0, linetype = "dotted", alpha = 0.5) +
+  # Highlight example: CDF at x = 1
+  geom_segment(x = -4, xend = 1, y = pnorm(1), yend = pnorm(1),
+               color = "coral", linetype = "dashed") +
+  geom_segment(x = 1, xend = 1, y = 0, yend = pnorm(1),
+               color = "coral", linetype = "dashed") +
+  annotate("text", x = 1, y = pnorm(1), 
+           label = paste0("P(X ≤ 1) = ", round(pnorm(1), 3)),
+           color = "coral", size = 4, hjust = -0.1, vjust = -0.5) +
+  theme_classic(base_size = 14) +
+  xlab("x") + ylab("Cumulative Probability") +
+  labs(title = "Cumulative Distribution Function (pnorm)",
+       subtitle = "Shows the AREA under the curve to the left")
+
+# Combine side-by-side
+p_pdf | p_cdf
+```
+
+**Summary:**
+
+- **`dnorm(x)`**: "How tall is the curve at x?" → Used for visualizing the distribution shape
+- **`pnorm(x)`**: "What proportion of values are ≤ x?" → Used for calculating probabilities
+- **`qnorm(p)`**: "What x value has proportion p below it?" → Used for finding critical values (e.g., 95th percentile)
+- **`rnorm(n)`**: "Give me n random values from this distribution" → Used in simulations
+
+In stochastic population models, we primarily use **`rnorm()`** to generate random environmental fluctuations.
+
+# Simple Stochastic Logistic Growth
+
+Let's start with the familiar logistic growth model and add random environmental variation.
+
+## Deterministic Logistic Growth Review
+
+The deterministic logistic model is:
+
+$$
+N_{t+1} = N_t + r N_t \left(1 - \frac{N_t}{K}\right)
+$$
+
+where:
+- $N_t$ = population size at time $t$
+- $r$ = intrinsic growth rate
+- $K$ = carrying capacity
+
+```{r}
+# Deterministic simulation
+r <- 0.1
+K <- 250
+N0 <- 50
+T <- 100
+
+N <- numeric(T + 1)
+N[1] <- N0
+
+for (t in 1:T) {
+  growth <- r * N[t] * (1 - N[t] / K)
+  N[t + 1] <- N[t] + growth
+}
+
+# Plot
+data.frame(time = 0:T, N = N) %>%
+  ggplot(aes(x = time, y = N)) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_hline(yintercept = K, linetype = "dashed") +
+  theme_classic(base_size = 15) +
+  xlab("Time") + ylab("Population Size") +
+  labs(title = "Deterministic Logistic Growth")
+```
+
+The population smoothly approaches carrying capacity. Every simulation with the same parameters produces this identical curve.
+
+## Adding Environmental Stochasticity
+
+<font color="#E0AC00">__Environmental stochasticity__</font> represents random fluctuations in environmental conditions affecting all individuals simultaneously (e.g., weather, resource availability). We add this as random noise proportional to population size:
+
+$$
+N_{t+1} = \max\left(0, N_t + r N_t \left(1 - \frac{N_t}{K}\right) + \sigma N_t \epsilon_t\right)
+$$
+
+where:
+- $\sigma$ = noise strength (environmental variability)
+- $\epsilon_t \sim \text{Normal}(0, 1)$ = random environmental fluctuation
+- $\max(0, \cdot)$ prevents negative populations
+
+```{r}
+# Function to simulate one stochastic trajectory
+simulate_logistic <- function(r, K, N0, T, sigma) {
+  N <- numeric(T + 1)
+  N[1] <- N0
+  
+  for (t in 1:T) {
+    growth <- r * N[t] * (1 - N[t] / K)
+    noise <- sigma * N[t] * rnorm(1)  # Environmental stochasticity
+    N[t + 1] <- max(0, N[t] + growth + noise)
+  }
+  
+  tibble(time = 0:T, N = N)
+}
+
+# Run one simulation
+sigma <- 0.05
+result <- simulate_logistic(r, K, N0, T, sigma)
+
+ggplot(result, aes(x = time, y = N)) +
+  geom_line(color = "blue") +
+  geom_hline(yintercept = K, linetype = "dashed") +
+  theme_classic(base_size = 15) +
+  xlab("Time") + ylab("Population Size") +
+  labs(title = "Stochastic Logistic Growth (σ = 0.05)")
+```
+
+Notice the trajectory fluctuates around the deterministic path. Each simulation will be different!
+
+## Monte Carlo Simulations
+
+With stochastic models, we need multiple simulations to characterize the <font color="#E0AC00">__distribution of outcomes__</font>. This is called <font color="#E0AC00">__Monte Carlo simulation__</font>.
+
+```{r}
+# Run multiple simulations
+n_sims <- 20
+
+# Use map_dfr to run simulations and combine results
+results <- map_dfr(1:n_sims, ~simulate_logistic(r, K, N0, T, sigma) %>%
+                     mutate(simulation = .x))
+# NOTES: map_dfr() from purrr package:
+#   - Iterates over 1:n_sims (runs simulation 1, then 2, then 3, ... up to 20)
+#   - The ~ creates a temporary function that calls our function simulate_logistic()
+#   - mutate adds a simulation ID column using .x (the current iteration)
+#   - For each iteration, runs simulate_logistic() to get one population trajectory
+#   - mutate(simulation = .x) adds a column tracking which simulation this is
+#   - The "_dfr" suffix means "data frame, row-bind" - stacks all results into one data frame
+# 
+# map_dfr is equivalent to a for loop but more concise:
+# results <- data.frame()
+# for(i in 1:n_sims) {
+#   sim_i <- simulate_logistic(r, K, N0, T, sigma) %>% mutate(simulation = i)
+#   results <- bind_rows(results, sim_i)
+# }
+
+
+# Plot all trajectories
+ggplot(results, aes(x = time, y = N, group = simulation)) +
+  geom_line(alpha = 0.4, color = "steelblue") +
+  geom_hline(yintercept = K, linetype = "dashed") +
+  theme_classic(base_size = 15) +
+  xlab("Time") + ylab("Population Size") +
+  labs(title = "20 Stochastic Simulations (σ = 0.05)")
+```
+
+All trajectories fluctuate around carrying capacity $K$, but each follows a unique path due to random environmental variation.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 1</font>
+
+__Increase the noise strength to `sigma = 0.15` and run 20 simulations. Compare the results to `sigma = 0.05`. What effect does increased environmental variability have on population dynamics?__
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+sigma <- 0.15
+
+# Run multiple simulations
+n_sims <- 20
+
+# 
+results_low <- map_dfr(1:n_sims, ~simulate_logistic(r, K, N0, T, sigma) %>%
+                         mutate(simulation = .x))
+
+# Plot all trajectories
+ggplot(results_low, aes(x = time, y = N, group = simulation)) +
+  geom_line(alpha = 0.4, color = "red") +
+  geom_hline(yintercept = K, linetype = "dashed") +
+  theme_classic(base_size = 15) +
+  xlab("Time") + ylab("Population Size") +
+  labs(title = "20 Stochastic Simulations (σ = 0.15)")
+
+```
+** Comparison: In the low-noise plot (σ = 0.05), once the lines increase, they don’t drop close to zero. In the high-noise plot (σ = 0.15), many lines fall very low or almost to zero. This shows that larger environmental changes make crashes more likely, even though the average size stays similar.**
+
+**Effect of increased environmental variability: When environmental variability increases from σ = 0.05 to σ = 0.15, the population sizes fluctuate much more and become less predictable. Instead of staying near the carrying capacity of 250, populations swing widely—sometimes very high and sometimes close to zero. This higher variability greatly increases the risk of population crashes, even though the average population size stays about the same.**
+ **
+
+</div>
+<br>
+
+# Temperature-Dependent Population Growth
+
+Real populations don't experience constant growth rates—environmental conditions like temperature strongly affect vital rates. Let's make the growth rate $r$ depend on temperature.
+
+## Temperature Response Function
+
+Many organisms have a <font color="#E0AC00">__thermal optimum__</font>—a temperature where performance is maximized. We model this with a parabolic response that can become negative beyond the thermal tolerance limits:
+
+$$
+r(T) = r_{max} \left(1 - \frac{(T - T_{opt})^2}{\sigma_T^2}\right)
+$$
+
+where:
+- $T$ = temperature
+- $r_{max}$ = maximum growth rate (at optimal temperature)
+- $T_{opt}$ = optimal temperature
+- $\sigma_T$ = thermal niche width (tolerance to temperature deviation)
+
+**Key feature:** Unlike a Gaussian curve that asymptotically approaches zero, this parabolic function crosses zero and becomes **negative** when temperature deviates too far from $T_{opt}$. Negative $r$ means population decline—the environment is no longer suitable for positive growth.
+
+```{r}
+# Define temperature response function
+r_max <- 0.1     # Maximum growth rate
+T_opt <- 12      # Optimal temperature (°C)
+sigma_T <- 2     # Thermal niche width (°C)
+
+# Parabolic r(T) that can be negative beyond thermal limits
+r_of_T <- function(T, r_max, T_opt, sigma_T) {
+  r_max * (1 - ((T - T_opt)^2) / (sigma_T^2))
+}
+
+# Visualize the thermal performance curve
+temp_range <- tibble(T = seq(T_opt - 5, T_opt + 5, by = 0.1)) %>%
+  mutate(rT = r_of_T(T, r_max, T_opt, sigma_T))
+
+ggplot(temp_range, aes(x = T, y = rT)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  geom_line(color = "darkgreen", linewidth = 1.5) +
+  geom_vline(xintercept = T_opt, linetype = "dotted") +
+  annotate("text", x = T_opt, y = r_max, label = "T_opt", 
+           vjust = -0.8, size = 4) +
+  annotate("text", x = 18, y = -0.1, label = "Negative r\n(decline)", 
+           color = "red", size = 3.5) +
+  theme_classic(base_size = 15) +
+  xlab("Temperature (°C)") + ylab("Growth Rate r(T)") +
+  labs(title = "Parabolic Thermal Performance Curve")
+```
+
+Growth rate peaks at $T_{opt} = 12°C$ and declines on either side. Critically, $r(T)$ becomes **negative** when $|T - T_{opt}| > \sigma_T$, meaning the population will decline if temperature moves beyond thermal tolerance limits. A narrow $\sigma_T$ creates a thermal specialist (sensitive to temperature), while a wide $\sigma_T$ creates a generalist (tolerant).
+
+The thermal niche width $\sigma_T$ determines where $r(T) = 0$:
+- When $T = T_{opt} \pm \sigma_T$, the growth rate is exactly zero
+- Beyond this range, populations experience negative growth (decline toward extinction)
+
+## Simulating Climate Warming
+
+Let's simulate a population experiencing gradual warming over 100 years:
+
+```{r}
+# Climate parameters
+years <- 100
+T0 <- 12          # Starting temperature (°C)
+trend <- 0.04     # Warming trend (°C/year) → 4°C/century
+temp_sd <- 1    # Year-to-year variability
+
+# Generate temperature time series
+temp_df <- tibble(
+  year = 0:years,
+  temp = T0 + trend * (0:years) + rnorm(years + 1, mean = 0, sd = temp_sd)
+)
+
+# Plot temperature trajectory
+p_temp <- ggplot(temp_df, aes(x = year, y = temp)) +
+  geom_line(color = "tomato", linewidth = 1) +
+  theme_classic(base_size = 15) +
+  xlab("Year") + ylab("Temperature (°C)") +
+  labs(title = "Climate Warming Scenario")
+
+p_temp
+```
+
+Temperature rises from 12°C to ~16°C over the century, with year-to-year fluctuations superimposed on the warming trend.
+
+## Population Response to Warming
+
+Now simulate a population where growth rate depends on the changing temperature:
+
+```{r}
+# Modified simulation function with temperature-dependent growth
+simulate_logistic_temp <- function(K, N0, sigma, temp_vec, r_max, T_opt, sigma_T) {
+  # Setup
+  T_steps <- length(temp_vec) - 1    # Number of time steps (transitions)
+  N <- numeric(T_steps + 1)          # Set up empty population vector
+  N[1] <- N0                          # Set initial population size
+  
+  # Simulate population dynamics over time
+  for (t in 1:T_steps) {
+    # Calculate temperature-dependent growth rate using parabolic function
+    r_t <- r_of_T(temp_vec[t], r_max, T_opt, sigma_T)
+    
+    # Growth depends on whether conditions are favorable (r >= 0) or not (r < 0)
+    if (r_t >= 0) {
+      # Standard discrete logistic when conditions are favorable
+      growth <- r_t * N[t] * (1 - N[t] / K)
+    } else {
+      # Exponential decline when r < 0 (conditions unsuitable)
+      # Density dependence doesn't help when environment is hostile
+      growth <- r_t * N[t]
+    }
+    
+    # Stochastic component (environmental noise)
+    noise <- sigma * N[t] * rnorm(1)
+
+    # Update population (cannot go below 0)
+    N_next <- N[t] + growth + noise
+    N[t + 1] <- max(0, N_next)
+  }
+  
+  # Return results as data frame
+  tibble(year = 0:T_steps, N = N)
+}
+
+# Set parameters
+K <- 2000      # Carrying capacity
+N0 <- 100       # Initial population size
+sigma <- 0.05  # Environmental noise strength
+# r_max2 <- r_max  # use old rate?
+r_max2 <- .1  # or set new one
+# Run the simulation
+pop_df <- simulate_logistic_temp(
+  K = K,                    # Carrying capacity
+  N0 = N0,                  # Starting population
+  sigma = sigma,            # Environmental variability
+  temp_vec = temp_df$temp,  # Temperature time series (from earlier)
+  r_max = r_max2,            # Maximum growth rate
+  T_opt = T_opt,            # Optimal temperature
+  sigma_T = sigma_T         # Thermal niche width
+)
+# Returns a data frame with columns: year, N
+
+# Plot population trajectory
+p_pop <- ggplot(pop_df, aes(x = year, y = N)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_hline(yintercept = K, linetype = "dashed") +
+  theme_classic(base_size = 15) +
+  xlab("Year") + ylab("Population Size") +
+  labs(title = "Population Under Climate Warming")
+
+# Plot growth rate over time
+p_rT <- temp_range %>%
+  ggplot(aes(x = T, y = rT)) +
+  geom_line(color = "darkgreen", linewidth = 1.5) +
+  geom_vline(xintercept = T_opt, linetype = "dotted") +
+  theme_classic(base_size = 15) +
+  xlab("Temperature (°C)") + ylab("Growth Rate r(T)") +
+  labs(title = "Thermal Performance Curve")
+
+# Combine plots
+(p_temp / p_pop / p_rT)
+```
+
+**What's happening?** 
+
+The population initially grows well (temperature near optimum at $T_{opt} = 12°C$). But as warming continues, temperature exceeds the thermal niche width ($\sigma_T$), and $r(T)$ becomes **negative**. Once growth rate turns negative, the population declines toward extinction. The parabolic thermal response creates a clear threshold: beyond $T_{opt} \pm \sigma_T$, the environment becomes unsuitable and populations cannot persist.
+
+**A note on model formulation:** When $r(T) \geq 0$, we use standard discrete logistic growth with density dependence. But when $r(T) < 0$ (unsuitable conditions), we switch to simple exponential decline: $N_{t+1} = N_t + r(T) \cdot N_t$. This prevents a mathematical artifact where populations above $K$ would paradoxically *grow* when $r < 0$ (because negative × negative = positive in the original formulation).
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 2</font>
+
+__Increase the thermal niche width to `sigma_T = 8` and re-run the simulation. How does a broader thermal tolerance affect the population's response to warming?__
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+# Define temperature response function
+r_max <- 0.1     # Maximum growth rate
+T_opt <- 12      # Optimal temperature (°C)
+sigma_T <- 8     # Increased thermal niche width (°C)
+
+# Parabolic r(T) that can be negative beyond thermal limits
+r_of_T <- function(T, r_max, T_opt, sigma_T) {
+  r_max * (1 - ((T - T_opt)^2) / (sigma_T^2))
+}
+
+# Visualize the thermal performance curve
+temp_range <- tibble(T = seq(T_opt - 15, T_opt + 15, by = 0.1)) %>%
+  mutate(rT = r_of_T(T, r_max, T_opt, sigma_T))
+
+ggplot(temp_range, aes(x = T, y = rT)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  geom_line(color = "blue", linewidth = 1.5) +
+  geom_vline(xintercept = T_opt, linetype = "dotted") +
+  annotate("text", x = T_opt, y = r_max, label = "T_opt", 
+           vjust = -0.8, size = 4) +
+  theme_classic(base_size = 15) +
+  xlab("Temperature (°C)") + ylab("Growth Rate r(T)") +
+  labs(title = "Thermal Performance Curve")
+
+
+```
+
+**Effect of broader thermal tolerance: Broader tolerance (sigma_T=8) buffers populations against warming by keeping them productive longer and reducing the severity of negative impacts, while narrow tolerance (sigma_T=2) amplifies vulnerability, turning gradual climate change into a fast track to population collapse. This is why species with wide thermal niches are often predicted to persist better under future climate scenarios compared to thermal specialists.**
+
+</div>
+<br>
+
+# Extinction Risk and Thermal Niche Width
+
+How does thermal niche width affect extinction probability? Let's run Monte Carlo simulations across different niche widths.
+
+## Extinction Threshold
+
+First, we modify our simulation to track <font color="#E0AC00">__extinction__</font>. We'll define extinction as $N \leq 1$ (quasi-extinction threshold).
+
+```{r}
+# Modified function with extinction tracking
+simulate_logistic_temp_extinction <- function(K, N0, sigma, temp_vec, r_max, T_opt, sigma_T) {
+  T_steps <- length(temp_vec) - 1
+  N <- numeric(T_steps + 1)
+  N[1] <- N0
+  extinct <- FALSE
+  
+  for (t in 1:T_steps) {
+    if (extinct) {
+      N[t + 1] <- 0  # Extinction is "absorbing" (can't recover)
+    } else {
+      # Calculate temperature-dependent growth rate (parabolic)
+      r_t <- r_of_T(temp_vec[t], r_max, T_opt, sigma_T)
+      
+      # Growth depends on whether conditions are favorable (r >= 0) or not (r < 0)
+      if (r_t >= 0) {
+        # Standard discrete logistic when conditions are favorable
+        growth <- r_t * N[t] * (1 - N[t] / K)
+      } else {
+        # Exponential decline when r < 0 (conditions unsuitable)
+        # Density dependence doesn't help when environment is hostile
+        growth <- r_t * N[t]
+      }
+      
+      noise <- sigma * N[t] * rnorm(1)
+      
+      # Update population (cannot go below 0)
+      N_next <- N[t] + growth + noise
+      N[t + 1] <- max(0, N_next)
+      
+      # Check for extinction threshold
+      if (N[t + 1] <= 1) {
+        N[t + 1] <- 0
+        extinct <- TRUE
+      }
+    }
+  }
+  
+  tibble(year = 0:T_steps, N = N)
+}
+```
+
+## Monte Carlo Across Niche Widths
+
+Run many simulations for each thermal niche width to estimate extinction probability:
+
+```{r}
+# Grid of niche widths to test
+# width_values <- seq(0.5, 5, length.out=10)
+width_values <- round(seq(1, 4, by = 0.2), 2)
+n_sims_per_width <- 50
+
+# Run all simulations (this may take a minute)
+sim_results <- map_dfr(width_values, function(w) {
+  map_dfr(1:n_sims_per_width, function(s) {
+    simulate_logistic_temp_extinction(K, N0, sigma, temp_df$temp, r_max, T_opt, w) %>%
+      mutate(sigma_T = w, sim_id = s)
+  })
+})
+# sim_results <- sim_results %>% mutate(sigma_T = round(sigma_T, 2))  # need to round
+
+# Calculate extinction probability for each width
+extinction_summary <- sim_results %>%
+  group_by(sigma_T, sim_id) %>%
+  summarize(extinct = any(N == 0), .groups = "drop") %>%
+  group_by(sigma_T) %>%
+  summarize(p_extinct = mean(extinct), .groups = "drop")
+
+# Plot 1: pull out a few example trajectories for a few niche widths
+example_widths <- c(1.6, 2.2, 4)
+trajectories <- sim_results %>%
+  filter(sigma_T %in% example_widths)  # , sim_id <= 10
+
+p_traj <- ggplot(trajectories, aes(x = year, y = N, group = sim_id)) +
+  geom_line(alpha = 0.4, color = "steelblue") +
+  facet_wrap(~ sigma_T, ncol = 3, 
+             labeller = labeller(sigma_T = function(x) paste("σ_T =", x))) +
+  theme_minimal(base_size = 12) +
+  xlab("Year") + ylab("Population Size") +
+  labs(title = "Example Trajectories Across Thermal Niche Widths",
+       subtitle = "10 simulations per width shown")
+
+# Plot 2: Extinction probability vs niche width
+p_ext <- ggplot(extinction_summary, aes(x = sigma_T, y = p_extinct)) +
+  geom_line(color = "tomato", linewidth = 1.5) +
+  geom_point(color = "tomato", size = 3) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal(base_size = 15) +
+  xlab("Thermal Niche Width (σ_T, °C)") +
+  ylab("Extinction Probability")
+
+p_traj / p_ext
+```
+
+**Key insight:** Narrow thermal niches dramatically increase extinction risk under climate change. Populations with $\sigma_T < 2°C$ face high extinction probability, while broader thermal tolerance ($\sigma_T > 4°C$) provides resilience.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 3</font>
+
+__What thermal niche width gives approximately 50% extinction probability? Use the plot or `extinction_summary` table to find this value. Why might this threshold be important for conservation?__
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+
+# Find σ_T closest to 50% extinction
+sigma_50 <- extinction_summary %>%
+  filter(p_extinct >= 0.5) %>%
+  slice(1) %>%
+  pull(sigma_T)
+# its 1
+
+extinction_summary %>%
+  filter(sigma_T == sigma_50)
+
+# Get exact extinction probability for that σ_T
+p_50 <- extinction_summary %>%
+  filter(sigma_T == sigma_50) %>%
+  pull(p_extinct)
+
+# Plot extinction probability vs niche width, highlighting 50% extinction
+p_ext_highlight <- ggplot(extinction_summary, aes(x = sigma_T, y = p_extinct)) +
+  geom_line(color = "purple", linewidth = 1.5) +
+  geom_point(color = "purple", size = 3) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "gray40") +  # 50% line
+  geom_vline(xintercept = sigma_50, linetype = "dashed", color = "green") + # σ_T at 50%
+  annotate("text", x = sigma_50 + 0.1, y = 0.52, 
+           label = paste0("σ_T ≈ ", sigma_50, "\n50% extinction"), color = "green", hjust = 0) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_minimal(base_size = 15) +
+  xlab("Thermal Niche Width (σ_T, °C)") +
+  ylab("Extinction Probability") +
+  labs(title = "Extinction Probability Across Thermal Niche Widths",
+       subtitle = "Dashed lines show 50% extinction threshold")
+
+p_ext_highlight
+
+
+
+```
+
+
+**Why this matters for conservation: The thermal niche width that gives approximately 50% extinction probability is σ_T ≈ 2°C. This threshold is important for conservation because it identifies species that are particularly vulnerable to environmental fluctuations. Knowing which populations are near this tipping point can help prioritize management actions, such as protecting critical habitats or reducing additional stressors, to give these populations the best chance of surviving as temperatures change.**
+
+</div>
+<br>
+
+# Joint Effects: Environmental Variability and Thermal Tolerance
+
+So far we've explored thermal niche width while holding environmental variability ($\sigma$) constant. But both factors jointly determine extinction risk. Let's explore their interaction.
+
+## Two-Dimensional Parameter Space
+
+We'll vary both:
+- **Environmental variability** ($\sigma$): year-to-year environmental fluctuations
+- **Thermal niche width** ($\sigma_T$): physiological tolerance to temperature
+
+```{r}
+# Parameter grids (keep smaller for faster computation)
+sigma_values <- seq(0.05, .8, by = 0.05)  # Environmental variability
+width_values <- seq(0.5, 6, by = 0.5)       # Thermal niche width
+n_sims_per_cell <- 30                       # Replicates per combination
+
+# Parameter grids (keep smaller for faster computation)
+sigma_values <- seq(0.05, .8, by = 0.05)  # Environmental variability
+width_values <- seq(0.5, 6, by = 0.5)       # Thermal niche width
+n_sims_per_cell <- 30                       # Replicates per combination
+
+# Run simulations across both dimensions
+# This creates a 3-level nested loop using map_dfr:
+#   - Outer loop: iterates over each thermal niche width (w)
+#   - Middle loop: iterates over each environmental variability value (s)
+#   - Inner loop: runs n_sims_per_cell replicate simulations
+# 
+# For each combination of (w, s), we run 30 simulations and record the results.
+# All results are automatically combined into one large data frame.
+
+grid_sims <- map_dfr(width_values, function(w) {
+  # For each niche width w...
+  map_dfr(sigma_values, function(s) {
+    # ...and each sigma value s...
+    map_dfr(1:n_sims_per_cell, function(rep_id) {
+      # ...run a simulation and tag it with its parameter values
+      simulate_logistic_temp_extinction(K, N0, s, temp_df$temp, r_max, T_opt, w) %>%
+        mutate(sigma_T = w, sigma = s, sim_id = rep_id)
+    })
+  })
+})
+
+# This is equivalent to the following triple for-loop:
+# grid_sims <- data.frame()
+# for (w in width_values) {
+#   for (s in sigma_values) {
+#     for (rep_id in 1:n_sims_per_cell) {
+#       sim_result <- simulate_logistic_temp_extinction(K, N0, s, temp_df$temp, r_max, T_opt, w) %>%
+#         mutate(sigma_T = w, sigma = s, sim_id = rep_id)
+#       grid_sims <- bind_rows(grid_sims, sim_result)
+#     }
+#   }
+# }
+
+# Summarize extinction probability for each parameter combination
+ext_grid <- grid_sims %>%
+  # First, determine if each simulation went extinct (did N ever hit 0?)
+  group_by(sigma_T, sigma, sim_id) %>%
+  summarize(extinct = any(N == 0), .groups = "drop") %>%
+  # Then, calculate the proportion that went extinct for each (sigma_T, sigma) combo
+  group_by(sigma_T, sigma) %>%
+  summarize(p_extinct = mean(extinct), .groups = "drop")
+  # mean() of TRUE/FALSE values gives proportion TRUE (i.e., extinction probability)
+```
+
+## Visualizing the Extinction Landscape
+
+```{r}
+# Heatmap: extinction probability across parameter space
+p_heat <- ggplot(ext_grid, aes(x = sigma_T, y = sigma, fill = p_extinct)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  scale_fill_viridis_c(labels = scales::percent_format(accuracy = 1),
+                       limits = c(0, 1), option = "magma") +
+  theme_classic(base_size = 15) +
+  xlab("Thermal Niche Width (σ_T, °C)") +
+  ylab("Environmental Variability (σ)") +
+  labs(fill = "Extinction\nProbability",
+       title = "Extinction Risk Landscape",
+       subtitle = "Joint effects of environmental variability and thermal tolerance")
+
+p_heat
+```
+
+**Interpreting the extinction landscape:**
+
+- **Top-left corner (high σ, low σ_T):** Worst case - high environmental variability + narrow thermal niche → near-certain extinction
+- **Bottom-right corner (low σ, high σ_T):** Best case - stable environment + broad thermal tolerance → low extinction risk  
+- **Diagonal gradient:** Intermediate combinations show varying risk levels
+- **Nonlinear interaction:** The effects aren't simply additive - narrow niches amplify the impact of environmental variability
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 4</font>
+
+__Based on the heatmap:__
+
+__A) Identify parameter combinations with <10% extinction risk.__
+
+__B) If a population has σ_T = 3°C, what's the maximum environmental variability it can tolerate while keeping extinction risk below 20%?__
+
+__C) What does this tell us about conservation strategies for climate-sensitive species?__
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+**A) Parameter combinations with <10% extinction risk:**
+
+```{r}
+# Filter and display combinations with very low extinction risk (<10%)
+low_risk_combos <- ext_grid %>%
+  filter(p_extinct < 0.10) %>%
+  arrange(desc(sigma_T), sigma)  # sort by widest niche first, then increasing variability
+
+# View the results
+print(low_risk_combos)
+
+```
+
+
+
+**B) Maximum tolerable variability for σ_T = 3°C:**
+
+```{r}
+# Find the maximum sigma for σ_T = 3 that keeps extinction risk < 20%
+max_tolerable_sigma <- ext_grid %>%
+  filter(sigma_T == 3 & p_extinct < 0.20) %>%
+  summarize(max_sigma = max(sigma)) %>%
+  pull(max_sigma)
+
+# Display the result
+print(max_tolerable_sigma)
+
+```
+
+**C) Conservation implications: The simulations show that extinction risk depends strongly on the interaction between a species’ thermal tolerance (σ_T) and environmental variability (σ). Even moderately tolerant species (σ_T ≈ 3 °C) can experience sharply increasing risk when year-to-year temperature fluctuations exceed ~0.25 °C, while broadly tolerant species (σ_T ≥ 5.5 °C) remain resilient across a wider range of variability. For conservation, the most effective strategies are to stabilize environmental conditions and to reduce factors that amplify variability, and prioritize relocation sites with lower projected variability, especially for species near the tipping points. **
+
+
+</div>
+<br>
+
+# Summary
+
+This tutorial demonstrated how to build stochastic population models from simple to complex:
+
+1. **Environmental stochasticity** - Random fluctuations around deterministic dynamics
+2. **Temperature dependence** - Linking vital rates to environmental variables
+3. **Monte Carlo methods** - Quantifying extinction risk through repeated simulations
+4. **Parameter interactions** - Exploring joint effects of multiple stressors
+
+**Key ecological insights:**
+
+- Stochasticity makes even stable deterministic equilibria risky
+- Physiological limits (thermal tolerance) directly constrain demographic performance
+- Environmental variability amplifies the impact of narrow physiological niches
+- Climate change creates a "squeeze" - warming reduces performance while variability increases risk
+- Conservation requires understanding both average conditions and variability
+
+**Computational skills developed:**
+
+- Writing simulation functions with environmental forcing
+- Running Monte Carlo experiments across parameter grids
+- Using `map_dfr()` for efficient iteration
+- Visualizing multi-dimensional parameter spaces with heatmaps
+- Combining plots with `patchwork`
+
+These approaches extend to any population model - structured populations, interacting species, spatial dynamics, and more. The framework of adding stochasticity, running Monte Carlo simulations, and exploring parameter space is fundamental to modern population ecology.
+

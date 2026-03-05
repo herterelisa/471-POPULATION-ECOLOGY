@@ -1,0 +1,1223 @@
+---
+title: "WS2: Density-(In)Dependence and Population Dynamics"
+output:
+  html_document:
+    theme: "flatly"
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(6)
+library(tidyverse)
+library(deSolve)
+
+```
+
+<font color="#E0AC00">__Vocabulary terms__</font> appear in bold yellow. <font color="#8B16B6">__Graded exercises__</font> appear in purple boxes. <font color="#5DBA49">__Clarifications about learning objectives__</font> appear in bold green.
+
+# Introduction
+
+Now that we have the basics of R down, let's use it to explore population models. This week introduces foundational model types that serve as starting points for many ecological questions, focusing on how density-dependence shapes population dynamics.
+
+**Goals:**
+
+- Introduce ordinary differential equations and the deSolve package
+- Review density-independent and density-dependent population models
+- Build proficiency with constructing, simulating, and visualizing population models
+- Learn to compare how parameters affect population dynamics
+
+**New Models:** Exponential growth; logistic growth; generalized Lotka-Volterra
+
+**New Tools:** Numerical simulation with ODE solvers; parameter exploration through simulation
+
+# ODEs and deSolve
+
+When constructing population models, we must decide whether growth is <font color="#E0AC00">__discrete__</font> or <font color="#E0AC00">__continuous__</font>. Today, we primarily model continuous growth using <font color="#E0AC00">__differential equations__</font> that define the <font color="#E0AC00">__instantaneous growth rate__</font>—the growth rate given current <font color="#E0AC00">__state variables__</font> (typically population densities) and <font color="#E0AC00">__parameters__</font>. This differs from the <font color="#E0AC00">__intrinsic growth rate__</font>, a parameter describing per capita growth (often assuming no density-dependence).
+
+When using <font color="#E0AC00">__ordinary differential equations (ODEs)__</font> to simulate dynamics, we calculate population size at very small time intervals, integrating the differential equation at each step. Because finding integrals <font color="#E0AC00">__analytically__</font> (as in calculus class) quickly becomes intractable, we instead find them <font color="#E0AC00">__numerically__</font> using algorithms called <font color="#E0AC00">__ODE solvers__</font>. Install the "deSolve" package, which contains the solvers we'll use.
+
+# Density-Independent Growth
+
+Where do we begin building population models? Let's start by ignoring most ecological details—cutting away unnecessary complexity is a key modeling skill. The <font color="#E0AC00">__exponential model__</font> serves as the foundation for many models throughout this course.
+
+## The Exponential Growth Model
+
+The size of an exponentially growing population is:
+
+$$
+N_t = N_0e^{rt}
+$$
+
+Taking the derivative gives the differential equation:
+
+$$
+\frac{dN}{dt} = rN
+$$
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Model Parameters:**
+
+| Symbol | Name | Description | Typical Values |
+|--------|------|-------------|----------------|
+| $N$ | Population size | The number (or density) of individuals in the population; this is a state variable that changes over time | $N \geq 0$ |
+| $N_0$ | Initial population size | The population size at time $t = 0$; sets the starting point for simulations | $N_0 > 0$ |
+| $r$ | Intrinsic growth rate | The per capita rate of population growth under ideal conditions; represents births minus deaths per individual per time unit | $r > 0$ (growing), $r = 0$ (stable), $r < 0$ (declining) |
+| $t$ | Time | The time elapsed since the start of observation | $t \geq 0$ |
+
+</div>
+<br>
+
+Although we could use the closed-form equation directly, let's practice with ODE solvers since most population models lack closed-form solutions.
+
+## Simulating Exponential Growth
+
+First, define the model as a function:
+
+```{r}
+exp_mod <- function(time, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    dN <- r * N
+    list(c(dN))
+  })
+}
+```
+
+This function takes time (supplied later), a vector of <font color="#E0AC00">__initial values__</font> for state variables (here, just $N$), and a vector of parameters (here, just $r$). It calculates and returns the instantaneous growth rate.
+
+Define initial values, parameters, and time points:
+
+```{r}
+init_vals <- c(N = 2)
+pars <- c(r = 0.35)
+t <- seq(from = 1, to = 25, by = 0.1)
+```
+
+Run the ODE solver:
+
+```{r}
+output <- ode(y = init_vals, times = t, func = exp_mod, parms = pars)
+head(output)
+```
+
+Plot the time series:
+
+```{r}
+output %>%
+  ggplot(aes(x = time, y = N)) + 
+  geom_line(linewidth = 2) + 
+  theme_minimal(base_size = 15) + 
+  xlab("Time") + ylab("Population Size")
+```
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #FFE285; border-radius: 5px;">
+__A note on simulations in population modeling:__ We can interrogate models through three approaches: *parameter estimation*, *analysis*, and *simulation-based methods*. We've now learned to simulate continuous, deterministic models using ODE solvers. Here, we primarily use simulations to visualize dynamics and explore how parameters affect outcomes.
+
+Simulations excel with complex models—when working with stochastic models or high complexity, mathematical analysis becomes difficult, and numerical simulations provide intuition instead. However, simulations can be computationally intensive, and results aren't always as clean as analytical results. We'll revisit the tradeoffs throughout this course.
+</div>
+<br>
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 1</font>
+
+__Simulate exponential growth for 30 time units with $r = 0.5$ and $N_0 = 5$. Plot the results. Based on what you see, predict qualitatively what would happen if you doubled the growth rate to $r = 1.0$.__
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+# Define the exponential growth model
+exp_mod <- function(time, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    dN <- r * N
+    list(dN = dN)      # return as named list
+  })
+}
+
+# Initial conditions, parameters, and time sequence
+
+init <- c(N = 5)
+pars <- c(r = 0.5)
+times <- seq(from = 0, to = 30, by = 0.1)
+
+# Solve the ODE
+result <- ode(y = init, times = times, func = exp_mod, parms = pars)
+
+# Convert to data frame for plotting
+df <- as.data.frame(result)
+
+# Create the plot
+ggplot(df, aes(x = time, y = N)) +
+  geom_line(linewidth = 1.3, color = "#1f77b4") +
+  theme_minimal(base_size = 14) +
+  labs(title = "Exponential Growth" ,
+       x = "Time",
+       y = "Population size") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+ 
+* Higher r keeps the same curve shape but makes growth happen sooner and produces much larger numbers.
+
+</div>
+<br>
+
+## Discrete Density-Independent Growth
+
+For organisms like annual plants or univoltine insects that reproduce discretely, recall <font color="#E0AC00">__geometric population growth__</font>:
+
+$$
+N_t = N_0\lambda^t
+$$
+
+The difference equation is:
+
+$$
+N_{t+1} = \lambda N_t
+$$
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Model Parameters:**
+
+| Symbol | Name | Description | Typical Values |
+|--------|------|-------------|----------------|
+| $N_t$ | Population size at time $t$ | The number of individuals at discrete time step $t$ | $N_t \geq 0$ |
+| $\lambda$ | Finite rate of increase | The multiplicative factor by which the population changes each time step; ratio of $N_{t+1}$ to $N_t$ | $\lambda > 1$ (growing), $\lambda = 1$ (stable), $0 < \lambda < 1$ (declining) |
+
+**Connection to exponential growth:** $\lambda = e^r$, so a population with $\lambda = 1.5$ has the same per-generation growth as continuous exponential growth with $r = \ln(1.5) \approx 0.405$.
+
+</div>
+<br>
+
+Simulate with a for loop:
+
+```{r}
+N_0 <- 2
+lambda <- 1.5
+n_gens <- 20
+
+# Create a vector to store results
+N <- numeric(n_gens + 1)
+N[1] <- N_0
+
+# Loop through generations
+for (t in 1:n_gens) {
+  N[t + 1] <- lambda * N[t]
+}
+
+# Plot
+data.frame(generation = 0:n_gens, N = N) %>%
+  ggplot(aes(x = generation, y = N)) +
+  geom_line(linewidth = 2) +
+  geom_point(size = 3) +
+  theme_minimal(base_size = 15) +
+  xlab("Generation") + ylab("Population Size")
+```
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 2</font>
+
+__Simulate discrete growth for 15 generations with $\lambda = 0.8$ and $N_0 = 100$. What happens to the population? Why?__
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+
+# Set parameters
+N_0     <- 100
+lambda  <- 0.8
+n_gens  <- 15
+
+# Create vector to store population sizes (index 1 = generation 0)
+N <- numeric(n_gens + 1)
+N[1] <- N_0
+
+# Simulate over generations using a for loop
+for (t in 1:n_gens) {
+  N[t + 1] <- lambda * N[t]
+}
+
+# Create data frame for plotting and viewing
+df <- data.frame(
+  generation = 0:n_gens,
+  N          = round(N, 2))
+  
+# Print the results to see exact values
+print(df)
+
+# Plot 
+ggplot(df, aes(x = generation, y = N)) +
+  geom_line(linewidth = 1.5, color = "red") +
+  geom_point(size = 3, color = "blue") +
+  theme_minimal(base_size = 15) +
+  labs(
+    title    = "Discrete Population Growth",
+    x        = "Generation",
+    y        = "Population Size")
+```
+
+* The plot shows a population declining over 15 generations, starting at 100. This happens because the growth rate r is negative or effectively negative, meaning births are lower than deaths at all population sizes.
+
+
+</div>
+<br>
+
+### Comparing Multiple Discrete Simulations
+
+Often we want to compare how different parameter values affect dynamics. Here's an example comparing two different values of $\lambda$:
+
+```{r}
+# Define the lambda values we want to compare
+lambda_vals <- c(1.2, 1.5)
+n_gens <- 15
+
+# Create an empty list to store results
+results_list <- list()
+
+# Loop through each lambda value
+for (i in 1:length(lambda_vals)) {
+  # Run simulation
+  N <- numeric(n_gens + 1)
+  N[1] <- 10  # Start both at N_0 = 10
+  
+  for (t in 1:n_gens) {
+    N[t + 1] <- lambda_vals[i] * N[t]
+  }
+  
+  # Store results in a data frame with an identifier
+  results_list[[i]] <- data.frame(
+    generation = 0:n_gens,
+    N = N,
+    lambda = lambda_vals[i]  # Add column to track which lambda
+  )
+}
+
+# Combine all data frames into one
+combined <- bind_rows(results_list)
+
+# Plot with different colors for each lambda
+combined %>%
+  mutate(lambda = as.factor(lambda)) %>%
+  ggplot(aes(x = generation, y = N, color = lambda)) +
+  geom_line(linewidth = 1.5) +
+  geom_point(size = 2) +
+  theme_minimal(base_size = 15) +
+  xlab("Generation") + ylab("Population Size") +
+  labs(color = "Lambda", title = "Comparing growth rates")
+```
+
+Notice the pattern: create an empty list, loop through parameter values, store each result as a data frame in the list, then combine everything with `bind_rows()`.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 3</font>
+
+__In both exponential and geometric growth, population size depends on initial conditions. Simulate discrete growth with $\lambda = 1.2$ for three populations starting at $N_0 = 10$, $N_0 = 50$, and $N_0 = 100$. Plot all three on the same graph. How do the trajectories differ?__
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+
+```{r}
+
+# Parameters
+lambda  <- 1.2
+n_gens  <- 15
+N0_vals <- c(10, 50, 100)
+
+# Create an empty list to store results
+results_list <- list()
+
+# Loop through each initial population size
+for (i in 1:length(N0_vals)) {
+  N <- numeric(n_gens + 1)
+  N[1] <- N0_vals[i]
+  
+  # Simulate generations
+  for (t in 1:n_gens) {
+    N[t + 1] <- lambda * N[t]
+  }
+  
+  # Store in a data frame with identifier
+  results_list[[i]] <- data.frame(
+    generation = 0:n_gens,
+    N          = N,
+    N0         = N0_vals[i]
+  )
+}
+
+# Combine all simulations
+combined <- bind_rows(results_list)
+
+# Make N0 a factor (for ordered legend)
+combined <- combined %>%
+  mutate(N0 = factor(N0, levels = c(10, 50, 100)))
+
+# Plot — now with correct layering
+ggplot(combined, aes(x = generation, y = N, color = N0, group = N0)) +
+  geom_line(linewidth = 1.4) +
+  geom_point(size = 2.5) +
+  theme_minimal(base_size = 15) +
+  scale_color_manual(values = c("blue", "orange", "green")) +
+  labs(
+    title = "Discrete Geometric Growth-Different Initial Sizes",
+    x     = "Generation",
+    y     = "Population Size",
+    color = "Initial Size")
+
+```
+
+* The pattern and speed are the same for all curves; only the magnitude changes.The three curves in the exponential growth plot all rise the same way, just starting at different numbers: 10, 50, and 100. Each grows faster over time, keeping the same shape, only the sizes are different. 
+
+
+</div>
+<br>
+
+# Density-Dependent Growth
+
+Exponential models assume unlimited resources and space. In reality, populations face limits—the <font color="#E0AC00">__logistic growth model__</font> adds <font color="#E0AC00">__density-dependent__</font> regulation, where per capita growth declines as population size increases.
+
+## The Logistic Growth Model
+
+The logistic equation is:
+
+$$
+\frac{dN}{dt} = rN\left(1 - \frac{N}{K}\right)
+$$
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Model Parameters:**
+
+| Symbol | Name | Description | Typical Values |
+|--------|------|-------------|----------------|
+| $N$ | Population size | The number of individuals in the population (state variable) | $N \geq 0$ |
+| $r$ | Intrinsic growth rate | Maximum per capita growth rate at low density | $r > 0$ |
+| $K$ | Carrying capacity | The population size that can be sustained by available resources; where growth rate equals zero | $K > 0$ |
+
+**Understanding the model:** When $N$ is small relative to $K$, the term $(1 - N/K) \approx 1$, so growth is approximately exponential. As $N$ approaches $K$, the term $(1 - N/K) \rightarrow 0$, slowing growth. At $N = K$, growth stops entirely. If $N > K$, the term becomes negative, causing population decline.
+
+</div>
+<br>
+
+Simulate logistic growth:
+
+```{r}
+log_mod <- function(time, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    dN <- r * N * (1 - N / K)
+    list(c(dN))
+  })
+}
+
+init_vals <- c(N = 2)
+pars <- c(r = 1, K = 100)
+t <- seq(from = 0, to = 25, by = 0.1)
+
+output <- ode(y = init_vals, times = t, func = log_mod, parms = pars)
+
+output %>%
+  ggplot(aes(x = time, y = N)) + 
+  geom_line(linewidth = 2) + 
+  theme_minimal(base_size = 15) + 
+  xlab("Time") + ylab("Population Size")
+```
+
+Notice the characteristic S-shaped (sigmoidal) curve: initially exponential-like growth that gradually slows as the population approaches carrying capacity.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 4</font>
+
+__Simulate logistic growth starting at $N_0 = 120$ (above carrying capacity) with $r = 0.8$ and $K = 100$. What happens to the population? Does this make ecological sense?__
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+```{r}
+log_mod <- function(time, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    dN <- r * N * (1 - N / K)
+    list(c(dN))
+  })
+}
+
+init_vals <- c(N = 120)
+pars <- c(r = 0.8, K = 100)
+t <- seq(from = 0, to = 25, by = 0.1)
+
+output <- ode(y = init_vals, times = t, func = log_mod, parms = pars)
+
+output %>%
+  as.data.frame() %>%
+  ggplot(aes(x = time, y = N)) +
+  geom_line(linewidth = 2, color = "red") +
+  geom_hline(yintercept = 100, linetype = "dashed", color = "black", linewidth = 1) +
+  theme_minimal(base_size = 15) +
+  xlab("Time") + 
+  ylab("Population Size") +
+  ggtitle("Logistic Growth")
+
+```
+
+* The population begins decreasing immediately from 120, declining quickly at first when it is far above the carrying capacity, then slowing as it approaches K. The population never drops below K, asymptotically approaching 100 without crossing it.
+Yes, it makes ecological sense. This model relates to our lecture on the Channel Islands, where introducing feral pigs led to more eagles, fewer island foxes, and more spotted skunks. It shows complex interactions like hyper predation and apparent competition, which go beyond simple single-species models but can be captured with predator-prey models like Lotka-Volterra equations (learned about this model in BI390 animal behavior last term with Professor Avinash.)
+
+</div>
+<br>
+
+## Exploring Parameter Effects
+
+A key goal in population ecology is understanding how parameters affect dynamics. Let's systematically explore how $r$ and $K$ influence logistic growth by comparing multiple simulations.
+
+### Effect of Intrinsic Growth Rate
+
+First, let's see how different growth rates affect the approach to carrying capacity. We'll compare three values of $r$ while holding $K$ constant:
+
+```{r}
+# Define parameter values to compare
+r_vals <- c(0.5, 1.0, 1.5)
+
+# Create empty list to store results
+results_list <- list()
+
+# Loop through r values
+for (i in 1:length(r_vals)) {
+  # Run simulation
+  pars <- c(r = r_vals[i], K = 100)
+  output <- ode(y = c(N = 2), times = seq(0, 25, 0.1), 
+                func = log_mod, parms = pars)
+  
+  # Convert to data frame and add identifier
+  results_list[[i]] <- output %>%
+    as.data.frame() %>%
+    mutate(r = r_vals[i])
+}
+
+# Combine all results
+combined_data <- bind_rows(results_list)
+
+# Plot
+combined_data %>%
+  mutate(r = as.factor(r)) %>%
+  ggplot(aes(x = time, y = N, color = r)) +
+  geom_line(linewidth = 1.5) +
+  theme_minimal(base_size = 15) +
+  xlab("Time") + ylab("Population Size") +
+  labs(color = "Growth rate (r)", title = "Effect of intrinsic growth rate on logistic dynamics")
+```
+
+Higher $r$ values cause the population to approach carrying capacity more rapidly. The equilibrium itself doesn't change (all curves approach $K = 100$), but the *rate* of approach does. This makes sense: $r$ determines how quickly the population can respond to favorable conditions.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 5</font>
+
+__Following the example above, compare three different carrying capacities: $K = 50$, $K = 100$, and $K = 150$. Hold $r = 1$ constant and use $N_0 = 2$. Create a plot showing all three dynamics. How does carrying capacity affect the population trajectory?__
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+
+# Define parameter values to compare
+K_vals <- c(50, 100, 150)
+
+# Create empty list to store results
+results_list <- list()
+
+# Loop through K values
+for (i in 1:length(K_vals)) {
+  # Run simulation
+  pars <- c(r = 1.0, K = K_vals[i])
+  output <- ode(y = c(N = 2), times = seq(0, 25, 0.1), 
+                func = log_mod, parms = pars)
+  
+  # Convert to data frame and add identifier
+  results_list[[i]] <- output %>%
+    as.data.frame() %>%
+    mutate(K = K_vals[i])
+}
+
+# Combine all results
+combined_data <- bind_rows(results_list)
+
+# Plot
+combined_data %>%
+  mutate(K = as.factor(K)) %>%
+  ggplot(aes(x = time, y = N, color = K)) +
+  geom_line(linewidth = 1.5) +
+  theme_minimal(base_size = 15) +
+  xlab("Time") + ylab("Population Size") +
+  labs(color = "Carrying Capacity (K)", 
+       title = "Effect of Carrying Capacity on Logistic Dynamics")
+
+```
+
+* Carrying capacity K sets the population’s final size.In the figure you can see that population approaches K but never exceeds it. A higher K supports more individuals and slows the effect of density on growth. The initial growth is the same, controlled by r, but a higher K makes the population take longer to reach its maximum and allows a larger population. Ecologically, more resources mean more individuals, but r still determines how fast the population grows.
+
+
+
+</div>
+<br>
+
+### Joint Effects of r and K
+
+Now let's explore how $r$ and $K$ interact. We'll compare four combinations to see their joint effects:
+
+```{r}
+# Define combinations to compare
+param_combos <- data.frame(
+  r = c(0.5, 0.5, 1.5, 1.5),
+  K = c(50, 100, 50, 100)
+)
+
+# Create empty list
+results_list <- list()
+
+# Loop through parameter combinations
+for (i in 1:nrow(param_combos)) {
+  pars <- c(r = param_combos$r[i], K = param_combos$K[i])
+  output <- ode(y = c(N = 2), times = seq(0, 25, 0.1), 
+                func = log_mod, parms = pars)
+  
+  results_list[[i]] <- output %>%
+    as.data.frame() %>%
+    mutate(scenario = paste0("r=", param_combos$r[i], ", K=", param_combos$K[i]))
+}
+
+# Combine and plot
+combined_data <- bind_rows(results_list)
+
+combined_data %>%
+  ggplot(aes(x = time, y = N, color = scenario)) +
+  geom_line(linewidth = 1.5) +
+  theme_minimal(base_size = 15) +
+  xlab("Time") + ylab("Population Size") +
+  labs(color = "Parameter combination", title = "Joint effects of r and K")
+```
+
+This reveals that K determines where the population stabilizes, while r determines how quickly it gets there. Populations with both high r and high K reach large sizes rapidly, while those with low r and low K grow slowly to small equilibria. 
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #FFE285; border-radius: 5px;">
+__Thinking about parameter exploration:__ The approach above demonstrates essential modeling skills: (1) defining vectors of parameter values to explore, (2) looping through parameter combinations, (3) storing results systematically, (4) combining data for visualization, and (5) using color to compare scenarios. This workflow scales to complex models with many parameters—the logic remains the same even as models become more sophisticated.
+</div>
+<br>
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 6</font>
+
+__Design your own parameter exploration. Choose at least three combinations of $r$ and $K$ that you think would produce interesting contrasts. Simulate and plot them, then explain what ecological scenarios these parameter combinations might represent.__
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+
+# Define the four combinations of r and K to compare
+param_combos <- data.frame(
+  r = c(0.1, 0.5, 2.0, 1.0),
+  K = c(50, 100, 50, 200)
+)
+
+# Create empty list to store simulation results
+results_list <- list()
+
+# Loop through each row of parameter combinations
+for (i in 1:nrow(param_combos)) {
+  pars <- c(r = param_combos$r[i], K = param_combos$K[i])
+  
+  output <- ode(y = c(N = 2), 
+                times = seq(0, 25, 0.1), 
+                func = log_mod, 
+                parms = pars)
+  
+
+  results_list[[i]] <- output %>%
+    as.data.frame() %>%
+    mutate(scenario = paste0("r = ", param_combos$r[i], ", K = ", param_combos$K[i]))
+}
+
+# Combine all simulations into one data frame
+combined_data <- bind_rows(results_list)
+combined_data <- combined_data %>%
+  mutate(scenario = factor(scenario, levels = unique(scenario)))
+
+# Plot all four trajectories
+combined_data %>%
+  ggplot(aes(x = time, y = N, color = scenario)) +
+  geom_line(linewidth = 1.5) +
+  geom_hline(yintercept = c(50, 100), linetype = "dashed", color = "grey60", linewidth = 0.8) +
+  theme_minimal(base_size = 15) +
+  xlab("Time") + 
+  ylab("Population Size") +
+  labs(
+    color = "Parameter combination",
+    title = "Joint Effects of r and K on Logistic Growth"
+  )
+```
+* Purple - A species with strong reproductive potential in an abundant, high-quality habitat that supports a large stable population such as bunnies. 
+
+* Green - A classic K-selected species: 
+The population rises steadily over time and stabilizes at a reasonably high level supported by good forage and space. A good example would be deers. 
+
+* Red - This represents a very slow-reproducing, long-lived species such as a tree in a resource-poor or harsh habitat. Growth is so sluggish that the population barely increases toward a low carrying capacity even after many years.
+
+* Blue - The population explodes quickly at first but is rapidly limited and plateaus at a modest size due to resource exhaustion. Example would be mole rats, mice and bacteria. 
+
+
+</div>
+<br>
+
+## Discrete Logistic Growth and Chaos
+
+The discrete analogue of logistic growth is:
+
+$$
+N_{t+1} = N_t + rN_t\left(1 - \frac{N_t}{K}\right)
+$$
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Model Parameters:**
+
+| Symbol | Name | Description | Typical Values |
+|--------|------|-------------|----------------|
+| $N_t$ | Population size at time $t$ | The number of individuals at discrete time step $t$ | $N_t \geq 0$ |
+| $r$ | Intrinsic growth rate | Controls the strength of population response; unlike continuous logistic growth, high values of $r$ can produce oscillations or chaos | $0 < r < 1$ (stable approach), $1 < r < 2$ (damped oscillations), $r > 2.57$ (chaos) |
+| $K$ | Carrying capacity | The equilibrium population size in the absence of oscillations | $K > 0$ |
+
+**Key difference from continuous model:** In discrete logistic growth, the population can "overshoot" $K$ because growth is calculated in steps rather than continuously. This overshooting creates the potential for oscillations and chaos at high $r$ values.
+
+</div>
+<br>
+
+Simulate with a for loop:
+
+```{r}
+N_0 <- 1
+r <- 1.9
+K <- 100
+n_gens <- 50
+
+N <- numeric(n_gens + 1)
+N[1] <- N_0
+
+for (t in 1:n_gens) {
+  N[t + 1] <- N[t] + r * N[t] * (1 - N[t] / K)
+}
+
+data.frame(generation = 0:n_gens, N = N) %>%
+  ggplot(aes(x = generation, y = N)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  theme_minimal(base_size = 15) +
+  xlab("Generation") + ylab("Population Size")
+```
+
+Notice the oscillations—the population overshoots carrying capacity, leading to alternating periods above and below K.
+
+**To compare different parameter values**, it's helpful to wrap the simulation in a function:
+
+```{r}
+# Function to simulate discrete logistic growth
+sim_discrete_logistic <- function(r, K, N_0, n_gens) {
+  N <- numeric(n_gens + 1)
+  N[1] <- N_0
+  for (t in 1:n_gens) {
+    N[t + 1] <- N[t] + r * N[t] * (1 - N[t] / K)
+  }
+  # Return as data frame
+  data.frame(generation = 0:n_gens, N = N)
+} # end function
+
+# Example: compare r = 1.5 and r = 2.0
+# Define the r values we want to compare
+r_vals <- c(1.5, 2.0)
+
+# Create empty list to store results
+results_list <- list()
+
+# Loop through r values
+for (i in 1:length(r_vals)) {
+  results_list[[i]] <- sim_discrete_logistic(r = r_vals[i], K = 100, N_0 = 1, n_gens = 50) %>%
+    mutate(r = r_vals[i])
+}
+
+# Combine and plot
+combined <- bind_rows(results_list)
+
+combined %>%
+  mutate(r = as.factor(r)) %>%
+  ggplot(aes(x = generation, y = N, color = r)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.5, alpha = 0.6) +
+  theme_minimal(base_size = 15) +
+  xlab("Generation") + ylab("Population Size") +
+  labs(color = "Growth rate")
+```
+
+With $r = 2.0$, the oscillations are more pronounced than with $r = 1.5$.
+
+If the plots are on top of each other, it could sometimes be useful to plot them in separate panels using facet_wrap()
+
+```{r}
+combined %>%
+  mutate(r = as.factor(r)) %>%
+  ggplot(aes(x = generation, y = N, color = r)) +
+  facet_wrap(~ r, ncol = 1, labeller = label_both) +  # label_both plots the variable name and value (see ?labellers)
+  geom_line(linewidth = 1) +
+  geom_point(size = 1.5, alpha = 0.6) +
+  theme_minimal(base_size = 15) +
+  xlab("Generation") + ylab("Population Size") +
+  labs(color = "Growth rate")
+
+```
+
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 7</font>
+
+__Simulate discrete logistic growth for 100 generations with $r = 2.5$, $K = 100$, and $N_0 = 10$. Describe the dynamics you observe. Then simulate with $r = 2.8$. How do the dynamics change? This demonstrates how discrete-time models can produce complex dynamics that don't occur in continuous time.__
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+
+# Simulation function (unchanged)
+sim_discrete_logistic <- function(r, K, N0, n_gens) {
+  N <- numeric(n_gens + 1)
+  N[1] <- N0
+  for (t in 1:n_gens) {
+    N[t + 1] <- N[t] + r * N[t] * (1 - N[t] / K)
+  }
+  data.frame(generation = 0:n_gens, N = N)
+}
+
+# Parameters
+K <- 100
+N0 <- 10
+n_gens <- 100
+r_vals <- c(2.5, 2.8)
+
+# Run simulations and add r as factor for coloring
+results <- lapply(r_vals, function(r) {
+  sim_discrete_logistic(r = r, K = K, N0 = N0, n_gens = n_gens) %>%
+    mutate(r = as.factor(r))
+})
+
+combined <- bind_rows(results)
+
+# Plot with color, legend, and facets
+ggplot(combined, aes(x = generation, y = N, color = r)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 1.8, alpha = 0.7) +
+  facet_wrap(~ r, ncol = 1, labeller = label_both) +
+  scale_color_manual(values = c("2.5" = "#d73027", "2.8" = "#4575b4"),
+                     name = "Growth rate (r)") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        strip.text = element_text(size = 12, face = "bold")) +
+  xlab("Generation") +
+  ylab("Population size")
+
+```
+*The discrete logistic model over 100 generations with K equals 100 and N_0 equals 10 shows strong sensitivity to the growth rate r.
+At r equals 2.5, the population grows fast, overshoots 100, then oscillates above and below carrying capacity with shrinking swings.
+By roughly generations 50 to 70, the population stays close to 100 and behaves as a stable equilibrium.
+At r equals 2.8, overshoots rise above 130 and crashes fall far below 100, often near 50.
+Instead of stabilizing, the population enters a persistent two value cycle that continues through generation 100, showing how higher r creates sustained oscillations in discrete time models.
+
+
+</div>
+<br>
+
+# Generalized Lotka-Volterra
+
+The <font color="#E0AC00">__generalized Lotka-Volterra (gLV)__</font> model extends logistic growth to multiple interacting species. It's the foundation for understanding competition, predation, mutualism, and complex communities.
+
+For $n$ species, the model is:
+
+$$
+\frac{dN_i}{dt} = r_iN_i\left(1 + \sum_{j=1}^{n}\alpha_{ij}N_j\right)
+$$
+
+where $\alpha_{ij}$ is the per capita effect of species $j$ on species $i$'s growth.
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #d4edda; border-radius: 5px;">
+**Model Parameters:**
+
+| Symbol | Name | Description |
+|--------|------|-------------|
+| $N_i$ | Population size of species $i$ | State variable for species $i$ |
+| $r_i$ | Intrinsic growth rate of species $i$ | Maximum per capita growth rate |
+| $\alpha_{ij}$ | Interaction coefficient | Per capita effect of species $j$ on species $i$ |
+
+**Interpreting interaction coefficients:**
+
+- $\alpha_{ii}$: intraspecific interaction (typically negative; self-limitation)
+- $\alpha_{ij}$ where $i \neq j$: interspecific interaction
+  - Both negative: competition
+  - Opposite signs: predation or parasitism
+  - Both positive: mutualism
+
+**Connection to logistic growth:** The logistic model is a special case of gLV with one species and $\alpha_{ii} = -1/K$.
+
+</div>
+<br>
+
+## Two-Species Competition
+
+Let's simulate two competing species:
+
+```{r}
+glv_comp <- function(time, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    dN1 <- r1 * N1 * (1 + a11 * N1 + a12 * N2)
+    dN2 <- r2 * N2 * (1 + a21 * N1 + a22 * N2)
+    list(c(dN1, dN2))
+  })
+}
+
+init_vals <- c(N1 = 10, N2 = 10)
+pars <- c(r1 = 1.0, r2 = 0.8,
+          a11 = -0.01, a12 = -0.008,  # Species 1 self-limits and competes with 2
+          a21 = -0.012, a22 = -0.01)  # Species 2 self-limits and competes with 1
+t <- seq(from = 0, to = 50, by = 0.1)
+
+output <- ode(y = init_vals, times = t, func = glv_comp, parms = pars)
+
+# To plot both species on the same graph, we reshape the data
+# pivot_longer() converts the wide format (separate N1 and N2 columns)
+# into long format (one column for species names, one for abundances)
+output_long <- output %>%
+  as.data.frame() %>%
+  pivot_longer(cols = c(N1, N2), names_to = "species", values_to = "N")
+head(output_long) # look at it compared to output
+head(output) # look at it compared to output
+
+ggplot(output_long, aes(x = time, y = N, color = species)) +
+  geom_line(linewidth = 1.5) +
+  theme_minimal(base_size = 15) +
+  xlab("Time") + ylab("Population Size") +
+  labs(color = "Species")
+
+```
+
+Here, both species persist, reaching stable coexistence. The outcome depends on the relative strengths of intra- vs. interspecific competition.
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 8</font>
+
+__Modify the competition simulation to make interspecific competition much stronger than intraspecific competition. For example, try $\alpha_{12} = -0.02$ and $\alpha_{21} = -0.02$ while keeping $\alpha_{11} = -0.01$ and $\alpha_{22} = -0.01$. What happens? Can both species still coexist?__
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+
+glv_comp <- function(time, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    dN1 <- r1 * N1 * (1 + a11 * N1 + a12 * N2)
+    dN2 <- r2 * N2 * (1 + a21 * N1 + a22 * N2)
+    list(c(dN1, dN2))
+  })
+}
+
+init_vals <- c(N1 = 10, N2 = 10)
+
+pars <- c(
+  r1 = 1.0,
+  r2 = 0.8,
+  a11 = -0.01,
+  a22 = -0.01,
+  a12 = -0.02,
+  a21 = -0.02
+)
+
+t <- seq(from = 0, to = 50, by = 0.1)
+
+output <- ode(y = init_vals, times = t, func = glv_comp, parms = pars)
+
+output_long <- output %>%
+  as.data.frame() %>%
+  pivot_longer(cols = c(N1, N2),
+               names_to = "species",
+               values_to = "N")
+
+ggplot(output_long, aes(x = time, y = N, color = species)) +
+  geom_line(linewidth = 1.5) +
+  theme_minimal(base_size = 15) +
+  xlab("Time") +
+  ylab("Population size") +
+  labs(color = "Species")
+
+```
+
+*N1 rises quickly to ≈100 and stabilizes there, while N2 shows the identical brief rise followed by a decline to 0. The trajectories are nearly indistinguishable between the two versions 
+
+In both cases, both cannot coexistence because N2 is out competed and declines to near zero (extinction), while N1 dominates and reaches its carrying capacity alone. This illustrates competitive exclusion, where one species prevents the other from persisting. If competition were weaker or more balanced. 
+
+</div>
+<br>
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 9</font>
+
+__Simulate dynamics with positive density-dependence for species 2 using a positive $\alpha_{22}$ value. Use `method = "vode"` in `ode()` to handle the challenging integration. Try changing the time span from 100 to 3. Describe what happens to the populations__ 
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+```{r}
+
+glv_comp <- function(time, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    dN1 <- r1 * N1 * (1 + a11 * N1 + a12 * N2)
+    dN2 <- r2 * N2 * (1 + a21 * N1 + a22 * N2) 
+    list(c(dN1, dN2))
+  })
+}
+
+init_vals <- c(N1 = 10, N2 = 10)
+
+pars <- c(
+  r1 = 1.0,
+  r2 = 0.8,
+  a11 = -0.01,
+  a12 = -0.008,
+  a21 = -0.012,
+  a22 = 0.01  
+)
+
+t <- seq(from = 0, to = 3, by = 0.01) 
+
+output <- ode(y = init_vals, times = t, func = glv_comp, parms = pars, method = "vode")
+
+output_long <- output %>%
+  as.data.frame() %>%
+  pivot_longer(cols = c(N1, N2), names_to = "species", values_to = "N")
+
+ggplot(output_long, aes(x = time, y = N, color = species)) +
+  geom_line(linewidth = 1.5) +
+  theme_minimal(base_size = 15) +
+  xlab("Time") +
+  ylab("Population size") +
+  labs(color = "Species")
+
+
+```
+* N1 grows slowly, peaks around 35–40, and then levels off or drops a little because it is limited by itself and by competition from N2. N2 grows very fast, reaching about 150–160, because it is hardly affected by N1 and uses resources well. N2 out competes N1, so N1 cannot grow much while N2 keeps increasing. This shows that when one species is much stronger, it can dominate and the weaker one may decline or disappear.
+
+
+</div>
+<br>
+
+<br>
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #E5B6F6; border-radius: 5px;">
+<font size="5">Exercise 10</font>
+
+__Modify the above function (and all the code) to simulate 3 competing species instead of 2. Find parameter values that allow them to all coexist over 100 time steps. HINT: you will need to modify gLV_mod to include a 3rd species, so: $dN1 <- r1*N1*(1 + N1*alpha11 + N2*alpha12 + N3*alpha13)$,  etc, and an equation for $dN3 <- ...$;   then, also need 3 "init_vals" and additional values of "pars"__
+
+</div>
+<br>
+
+<div style="border: 1px solid #ccc; padding: 10px; background-color: #D6EAF8; border-radius: 5px;">
+<font size="4">**Answer**</font>
+
+```{r}
+
+# 3-species gLV function
+glv_comp_3 <- function(time, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    dN1 <- r1 * N1 * (1 + a11 * N1 + a12 * N2 + a13 * N3)
+    dN2 <- r2 * N2 * (1 + a21 * N1 + a22 * N2 + a23 * N3)
+    dN3 <- r3 * N3 * (1 + a31 * N1 + a32 * N2 + a33 * N3)
+    list(c(dN1, dN2, dN3))
+  })
+}
+
+# Initial populations
+init_vals <- c(N1 = 10, N2 = 10, N3 = 10)
+
+# Parameters (chosen to allow coexistence)
+pars <- c(
+  r1 = 1.0, r2 = 0.9, r3 = 0.8,
+  a11 = -0.01, a12 = -0.005, a13 = -0.004,
+  a21 = -0.006, a22 = -0.01, a23 = -0.005,
+  a31 = -0.004, a32 = -0.006, a33 = -0.01
+)
+
+# Time sequence
+t <- seq(from = 0, to = 100, by = 0.1)
+
+# Solve ODE
+output <- ode(y = init_vals, times = t, func = glv_comp_3, parms = pars, method = "vode")
+
+# Reshape for plotting
+output_long <- output %>%
+  as.data.frame() %>%
+  pivot_longer(cols = c(N1, N2, N3), names_to = "species", values_to = "N")
+
+# Plot
+ggplot(output_long, aes(x = time, y = N, color = species)) +
+  geom_line(linewidth = 1.5) +
+  theme_minimal(base_size = 15) +
+  xlab("Time") +
+  ylab("Population size") +
+  labs(color = "Species")
+
+```
+* All species start low, grow quickly, and then level off to stable abundances around time 20–30.
+Equilibrium densities are N1 ~60, N3 ~55, and N2 ~38, with no extinctions or large oscillations.
+This shows stable coexistence because intra specific competition is stronger than inter specific competition, preventing any species from excluding the others. Adding N3 changes the system from unstable two-species dynamics to a stable three-species equilibrium, demonstrating how niche differences can allow multiple species to persist together.
+
+</div>
+<br>
+
+# Summary
+
+This worksheet introduced fundamental population models and simulation approaches:
+
+- **Density-independent growth** (exponential/geometric) assumes unlimited resources
+- **Density-dependent growth** (logistic) incorporates resource limitation through carrying capacity
+- **Parameter exploration** reveals how model parameters jointly determine dynamics
+- **Generalized Lotka-Volterra** extends single-species models to interacting communities
+
+Key skills developed:
+- Simulating ODEs with deSolve
+- Comparing dynamics across parameter values
+- Visualizing multi-species systems
+- Understanding discrete vs. continuous time
+
+These foundations will support more complex ecological models throughout the course.
+
+# Glossary
+
+## Population Model Structure
+
+**State variables**
+: The quantities that describe the current condition of a system and change over time. In population models, state variables are typically population sizes or densities ($N$, $N_1$, $N_2$, etc.). The differential equations we write describe how state variables change.
+
+**Parameters**
+: Fixed values that govern the behavior of a model but do not change during a simulation. Examples include intrinsic growth rate ($r$), carrying capacity ($K$), and interaction coefficients ($\alpha_{ij}$). Parameters are estimated from data or chosen to explore hypothetical scenarios.
+
+**Initial values**
+: The starting conditions for state variables at the beginning of a simulation (e.g., $N_0 = 10$). In deterministic models, initial values fully determine the trajectory of the system.
+
+## Time Representation
+
+**Discrete (time)**
+: A modeling framework where population changes occur at distinct, separated time points (e.g., yearly, generational). Appropriate for organisms with synchronized reproduction like annual plants or univoltine insects. Modeled with difference equations: $N_{t+1} = f(N_t)$.
+
+**Continuous (time)**
+: A modeling framework where population changes occur smoothly and constantly. Appropriate for organisms with overlapping generations and ongoing reproduction. Modeled with differential equations: $dN/dt = f(N)$.
+
+**Differential equation**
+: A mathematical equation describing how a quantity changes instantaneously as a function of its current value. In population ecology, differential equations express instantaneous growth rate as a function of current population size and parameters.
+
+**Ordinary differential equation (ODE)**
+: A differential equation involving derivatives with respect to a single variable (typically time). "Ordinary" distinguishes these from partial differential equations, which involve multiple independent variables (e.g., time and space).
+
+## Growth Rates
+
+**Instantaneous growth rate**
+: The rate of population change at a specific moment, given current population size and conditions. Expressed as $dN/dt$ and can be positive, negative, or zero depending on state variables. Changes continuously as the population changes.
+
+**Intrinsic growth rate ($r$)**
+: A parameter representing the maximum per capita growth rate under ideal conditions (no density-dependence, no resource limitation). Also called the Malthusian parameter. Positive $r$ indicates a viable population; $r = 0$ means no growth; negative $r$ indicates decline.
+
+## Density Dependence
+
+**Density-independent growth**
+: Population growth where per capita growth rate does not depend on population size. Results in exponential (continuous) or geometric (discrete) growth. Unrealistic for long time horizons but useful as a baseline model and for short-term dynamics.
+
+**Density-dependent growth**
+: Population growth where per capita growth rate changes with population size. Negative density-dependence (growth decreases as $N$ increases) is common due to competition for resources. Positive density-dependence (Allee effects) can occur at low densities.
+
+**Geometric population growth**
+: Discrete-time density-independent growth where population multiplies by a constant factor $\lambda$ each time step: $N_{t+1} = \lambda N_t$. The discrete analogue of exponential growth.
+
+## Models
+
+**Exponential model**
+: The simplest continuous-time population model: $dN/dt = rN$. Assumes density-independent growth, producing unbounded increase (if $r > 0$) or decline (if $r < 0$). Serves as a foundation for more complex models.
+
+**Logistic growth model**
+: A continuous-time model incorporating negative density-dependence: $dN/dt = rN(1 - N/K)$. Growth slows as population approaches carrying capacity $K$. Produces an S-shaped (sigmoidal) growth curve.
+
+**Carrying capacity ($K$)**
+: The population size that can be sustained by available resources in the logistic growth model. Represents the equilibrium population size where births equal deaths and growth stops.
+
+**Generalized Lotka-Volterra (gLV) model**
+: A multi-species extension of logistic growth: $dN_i/dt = r_i N_i(1 + \sum_j \alpha_{ij} N_j)$. Describes population dynamics of interacting species. Can represent competition, predation, mutualism, and other interactions depending on the signs of interaction coefficients.
+
+**Interaction matrix ($\mathbf{A}$)**
+: A matrix containing interaction coefficients $\alpha_{ij}$ for a community of species. Entry $\alpha_{ij}$ is the per capita effect of species $j$ on species $i$'s growth rate. Negative values indicate competition or predation; positive values indicate mutualism or facilitation.
+
+## Dynamic Behaviors
+
+**Chaotic (dynamics)**
+: Deterministic dynamics that appear random and are highly sensitive to initial conditions. Small differences in starting values lead to dramatically different trajectories over time. Occurs in discrete logistic growth at high values of $r$ (roughly $r > 2.57$).
+
+**Sensitivity to initial conditions**
+: A hallmark of chaotic systems where nearly identical starting points produce vastly different long-term dynamics. Makes long-term prediction practically impossible despite the system being deterministic.
+
+## Species Interactions
+
+**Species interactions**
+: Ecological relationships between populations of different species that affect their growth rates. Include competition (-/-), predation (+/-), mutualism (+/+), commensalism (+/0), and amensalism (-/0). In gLV models, captured by interaction coefficients $\alpha_{ij}$.
+
+**Intraspecific interaction coefficient ($\alpha_{ii}$)**
+: The per capita effect of a species on its own growth rate. Typically negative (self-limitation due to competition for resources). In the reparameterized logistic model, $\alpha_{ii} = -1/K$.
+
+**Interspecific interaction coefficient ($\alpha_{ij}$, $i \neq j$)**
+: The per capita effect of species $j$ on species $i$'s growth rate. Sign indicates the nature of the interaction (see interaction matrix). Magnitude indicates interaction strength.
+
+**Competitive exclusion**
+: The principle that when two species compete for identical resources and one has even a slight advantage, the competitively superior species will eventually exclude the other. Occurs when interspecific competition is stronger than intraspecific competition.
+
+**Coexistence**
+: The stable persistence of multiple species in the same community. In competition models, coexistence requires that each species limits itself more strongly than it limits other species (intraspecific competition > interspecific competition).
+
+## Methods
+
+**Analytical (methods)**
+: Mathematical approaches that derive exact solutions or characterize behavior using algebra and calculus. Examples include solving equations by hand. Yield general results but become intractable for complex models.
+
+**Numerical (methods)**
+: Computational approaches that approximate solutions using algorithms. Examples include ODE solvers that integrate differential equations step-by-step. Handle complex models but require specific parameter values and may introduce computational artifacts.
+
+**ODE solver**
+: An algorithm that numerically integrates ordinary differential equations to simulate system dynamics over time. Works by calculating state variable changes over small time intervals. The `ode()` function in the deSolve package implements several solver algorithms.
+
+**Loop**
+: A programming structure that repeats code multiple times. For loops iterate over a sequence of values; while loops repeat until a condition is met. Essential for simulating discrete-time models where each time step depends on the previous one, and for running multiple simulations with different parameter values.
+
