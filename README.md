@@ -17,13 +17,3 @@ Coursework and final project for BI 471. Uses R and R Markdown to simulate popul
 
 ---
 
-## Repo structure
-```
-BI471-Population-Ecology/
-├── worksheets/      # ws1–ws5 (.Rmd + .html)
-├── final_project/   # SRKW climate-toxin model
-└── README.md
-```
-
-## Stack
-`R` `R Markdown` `ggplot2` `dplyr` `popbio` `HTML output`
